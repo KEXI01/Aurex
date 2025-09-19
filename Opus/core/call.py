@@ -26,6 +26,7 @@ from pytgcalls.types.stream import StreamAudioEnded
 
 from Opus import YouTube, app
 from Opus.misc import db
+from Opus.logging import LOGGER
 from Opus.utils.database import (
     add_active_chat,
     add_active_video_chat,
