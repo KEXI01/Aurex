@@ -1,3 +1,5 @@
+# Opus/core/call.py
+
 import os
 import config
 import asyncio
@@ -12,6 +14,7 @@ from ntgcalls import TelegramServerError
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
     NoActiveGroupCall,
+    NotInGroupCallError,
 )
 from pytgcalls.types import (
     MediaStream,
@@ -21,7 +24,7 @@ from pytgcalls.types import (
 )
 from pytgcalls.types.stream import StreamAudioEnded
 
-from Opus import LOGGER, YouTube, app
+from Opus import YouTube, app
 from Opus.misc import db
 from Opus.utils.database import (
     add_active_chat,
@@ -37,7 +40,7 @@ from Opus.utils.database import (
 )
 from Opus.utils.exceptions import AssistantErr
 from Opus.utils.formatters import check_duration, seconds_to_min, speed_converter
-from Opus.utils.inline.play import stream_markup, stream_markup2
+from Opus.utils.inline.play import stream_markup
 from Opus.utils.stream.autoclear import auto_clean
 from Opus.utils.thumbnails import get_thumb
 
@@ -47,8 +50,34 @@ db_locks = {}
 loop = asyncio.get_event_loop_policy().get_event_loop()
 
 DEFAULT_AQ = AudioQuality.STUDIO
-DEFAULT_VQ = VideoQuality.UHD_4K
+DEFAULT_VQ = VideoQuality.HD_720p
 ELSE_AQ = AudioQuality.HIGH
+
+
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    # Use Flags if available in this version; otherwise omit video_flags for compatibility.
+    flags = getattr(MediaStream, "Flags", None)
+    if video:
+        if flags is not None:
+            return MediaStream(
+                path,
+                audio_parameters=DEFAULT_AQ,
+                video_parameters=DEFAULT_VQ,
+                video_flags=(flags.AUTO_DETECT if video else flags.IGNORE),
+                ffmpeg_parameters=ffmpeg_params,
+            )
+        return MediaStream(
+            path,
+            audio_parameters=DEFAULT_AQ,
+            video_parameters=DEFAULT_VQ,
+            ffmpeg_parameters=ffmpeg_params,
+        )
+    else:
+        return MediaStream(
+            path,
+            audio_parameters=ELSE_AQ,
+            ffmpeg_parameters=ffmpeg_params,
+        )
 
 
 async def _clear_(chat_id):
@@ -57,13 +86,13 @@ async def _clear_(chat_id):
             del db[chat_id]
         await remove_active_video_chat(chat_id)
         await remove_active_chat(chat_id)
-    except Exception as e:
-        LOGGER(__name__).error(f"Error clearing chat {chat_id}: {str(e)}")
+    except:
+        pass
 
 
 class Call(PyTgCalls):
     def __init__(self):
-        # Create dedicated Pyrogram clients per assistant
+        # Single Signal instance owns all assistants
         self.userbot1 = Client(
             name="OpusXAss1",
             api_id=config.API_ID,
@@ -104,7 +133,6 @@ class Call(PyTgCalls):
         )
         self.five = PyTgCalls(self.userbot5, cache_duration=100)
 
-    # Simple wrappers route to the correct assistant chosen by group_assistant()
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         await assistant.pause_stream(chat_id)
@@ -131,20 +159,19 @@ class Call(PyTgCalls):
             await _clear_(chat_id)
             try:
                 await assistant.leave_group_call(chat_id)
-            except NoActiveGroupCall:
+            except (NoActiveGroupCall, NotInGroupCallError):
                 pass
-        except Exception as e:
-            LOGGER(__name__).error(f"Error stopping stream for chat {chat_id}: {str(e)}")
+        except:
+            pass
 
     async def stop_stream_force(self, chat_id: int):
-        # Leave using all assistants defensively, ignore if not joined
         for client in [self.one, self.two, self.three, self.four, self.five]:
             try:
                 await client.leave_group_call(chat_id)
-            except NoActiveGroupCall:
+            except (NoActiveGroupCall, NotInGroupCallError):
                 pass
-            except Exception as e:
-                LOGGER(__name__).error(f"Error leaving VC for chat {chat_id}: {str(e)}")
+            except:
+                pass
         await _clear_(chat_id)
 
     async def speedup_stream(self, chat_id: int, file_path, speed, playing):
@@ -187,20 +214,11 @@ class Call(PyTgCalls):
         played, con_seconds = speed_converter(playing[0]["played"], speed)
         duration = seconds_to_min(dur)
 
-        # Keep MediaStream minimal
-        if playing[0]["streamtype"] == "video":
-            stream = MediaStream(
-                out,
-                audio_parameters=DEFAULT_AQ,
-                video_parameters=DEFAULT_VQ,
-                ffmpeg_parameters=f"-ss {played} -to {duration}",
-            )
-        else:
-            stream = MediaStream(
-                out,
-                audio_parameters=ELSE_AQ,
-                ffmpeg_parameters=f"-ss {played} -to {duration}",
-            )
+        stream = dynamic_media_stream(
+            out,
+            video=(playing[0]["streamtype"] == "video"),
+            ffmpeg_params=f"-ss {played} -to {duration}",
+        )
 
         if str(db[chat_id][0]["file"]) == str(file_path):
             await assistant.change_stream(chat_id, stream)
@@ -230,10 +248,10 @@ class Call(PyTgCalls):
         await remove_active_chat(chat_id)
         try:
             await assistant.leave_group_call(chat_id)
-        except NoActiveGroupCall:
+        except (NoActiveGroupCall, NotInGroupCallError):
             pass
-        except Exception as e:
-            LOGGER(__name__).error(f"Error force stopping stream for chat {chat_id}: {str(e)}")
+        except:
+            pass
 
     async def skip_stream(
         self,
@@ -243,52 +261,39 @@ class Call(PyTgCalls):
         image: Union[bool, str] = None,
     ):
         assistant = await group_assistant(self, chat_id)
-        if video:
-            stream = MediaStream(
-                link,
-                audio_parameters=DEFAULT_AQ,
-                video_parameters=DEFAULT_VQ,
-            )
-        else:
-            stream = MediaStream(
-                link,
-                audio_parameters=ELSE_AQ,
-            )
+        stream = dynamic_media_stream(link, video=bool(video))
         try:
             await assistant.change_stream(chat_id, stream)
-        except Exception as e:
-            LOGGER(__name__).error(f"Error skipping stream in chat {chat_id}: {str(e)}")
-            await app.send_message(chat_id, text="Failed to skip stream due to an error.")
+        except:
+            try:
+                await app.send_message(chat_id, text="Failed to skip stream due to an error.")
+            except:
+                pass
 
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
         assistant = await group_assistant(self, chat_id)
-        if mode == "video":
-            stream = MediaStream(
-                file_path,
-                audio_parameters=DEFAULT_AQ,
-                video_parameters=DEFAULT_VQ,
-                ffmpeg_parameters=f"-ss {to_seek} -to {duration}",
-            )
-        else:
-            stream = MediaStream(
-                file_path,
-                audio_parameters=ELSE_AQ,
-                ffmpeg_parameters=f"-ss {to_seek} -to {duration}",
-            )
+        stream = dynamic_media_stream(
+            file_path,
+            video=(mode == "video"),
+            ffmpeg_params=f"-ss {to_seek} -to {duration}",
+        )
         try:
             await assistant.change_stream(chat_id, stream)
-        except Exception as e:
-            LOGGER(__name__).error(f"Error seeking stream in chat {chat_id}: {str(e)}")
+        except:
+            pass
 
     async def stream_call(self, link):
-        # Used to verify VC capability in the log group
+        # Probe VC capability in the log group
         assistant = await group_assistant(self, config.LOGGER_ID)
         try:
-            await assistant.join_group_call(config.LOGGER_ID, MediaStream(link))
+            await assistant.join_group_call(config.LOGGER_ID, dynamic_media_stream(link, video=True))
             await asyncio.sleep(0.5)
-            await assistant.leave_group_call(config.LOGGER_ID)
-        except Exception as e:
-            LOGGER(__name__).error(f"Error in stream call for logger ID {config.LOGGER_ID}: {str(e)}")
+            try:
+                await assistant.leave_group_call(config.LOGGER_ID)
+            except (NoActiveGroupCall, NotInGroupCallError):
+                pass
+        except:
+            pass
 
     async def join_call(
         self,
@@ -302,17 +307,7 @@ class Call(PyTgCalls):
         language = await get_lang(chat_id)
         _ = get_string(language)
 
-        if video:
-            stream = MediaStream(
-                link,
-                audio_parameters=DEFAULT_AQ,
-                video_parameters=DEFAULT_VQ,
-            )
-        else:
-            stream = MediaStream(
-                link,
-                audio_parameters=ELSE_AQ,
-            )
+        stream = dynamic_media_stream(link, video=bool(video))
 
         try:
             await assistant.join_group_call(chat_id, stream)
@@ -336,16 +331,14 @@ class Call(PyTgCalls):
             counter[chat_id] = {}
             users = len(await assistant.get_participants(chat_id))
             if users == 1:
-                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+                autoend[chat_id] = datetime.now() + timedelta(minutes=5)
 
-    async def attempt_stream(self, client, chat_id, stream, retries=3):
-        for attempt in range(retries):
+    async def attempt_stream(self, client, chat_id, stream, retries=1):
+        for _ in range(retries):
             try:
                 await client.change_stream(chat_id, stream)
-                LOGGER(__name__).info(f"Stream changed successfully in chat {chat_id} on attempt {attempt + 1}")
                 return True
-            except Exception as e:
-                LOGGER(__name__).error(f"Stream attempt {attempt + 1} failed in chat {chat_id}: {str(e)}")
+            except:
                 await asyncio.sleep(1)
         return False
 
@@ -361,7 +354,6 @@ class Call(PyTgCalls):
                 autoend.pop(chat_id, None)
 
     async def change_stream(self, client, chat_id):
-        # Per-chat lock prevents concurrent transitions
         if chat_id not in db_locks:
             db_locks[chat_id] = asyncio.Lock()
 
@@ -375,7 +367,7 @@ class Call(PyTgCalls):
                     await _clear_(chat_id)
                     try:
                         await client.leave_group_call(chat_id)
-                    except NoActiveGroupCall:
+                    except (NoActiveGroupCall, NotInGroupCallError):
                         pass
                     return
 
@@ -391,14 +383,14 @@ class Call(PyTgCalls):
                     await _clear_(chat_id)
                     try:
                         await client.leave_group_call(chat_id)
-                    except NoActiveGroupCall:
+                    except (NoActiveGroupCall, NotInGroupCallError):
                         pass
                     return
-            except Exception:
+            except:
                 await _clear_(chat_id)
                 try:
                     await client.leave_group_call(chat_id)
-                except NoActiveGroupCall:
+                except (NoActiveGroupCall, NotInGroupCallError):
                     pass
                 return
 
@@ -407,7 +399,7 @@ class Call(PyTgCalls):
                 await _clear_(chat_id)
                 try:
                     await client.leave_group_call(chat_id)
-                except NoActiveGroupCall:
+                except (NoActiveGroupCall, NotInGroupCallError):
                     pass
                 return
 
@@ -426,23 +418,25 @@ class Call(PyTgCalls):
                 db[chat_id][0]["speed_path"] = None
                 db[chat_id][0]["speed"] = 1.0
 
-            is_video = str(streamtype) == "video"
+            is_video = (str(streamtype) == "video")
 
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
-                    LOGGER(__name__).error(f"Failed to get YouTube video link for {videoid}")
-                    await app.send_message(original_chat_id, text=_["call_6"])
+                    try:
+                        await app.send_message(original_chat_id, text=_["call_6"])
+                    except:
+                        pass
                     await _clear_(chat_id)
                     return
 
-                if is_video:
-                    stream = MediaStream(link, audio_parameters=DEFAULT_AQ, video_parameters=DEFAULT_VQ)
-                else:
-                    stream = MediaStream(link, audio_parameters=ELSE_AQ)
+                stream = dynamic_media_stream(link, video=is_video)
 
                 if not await self.attempt_stream(client, chat_id, stream):
-                    await app.send_message(original_chat_id, text=_["call_6"])
+                    try:
+                        await app.send_message(original_chat_id, text=_["call_6"])
+                    except:
+                        pass
                     await _clear_(chat_id)
                     return
 
@@ -472,18 +466,18 @@ class Call(PyTgCalls):
                         await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
                         await _clear_(chat_id)
                         return
-                except Exception:
+                except:
                     await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
                     await _clear_(chat_id)
                     return
 
-                if is_video:
-                    stream = MediaStream(file_path, audio_parameters=DEFAULT_AQ, video_parameters=DEFAULT_VQ)
-                else:
-                    stream = MediaStream(file_path, audio_parameters=ELSE_AQ)
+                stream = dynamic_media_stream(file_path, video=is_video)
 
                 if not await self.attempt_stream(client, chat_id, stream):
-                    await app.send_message(original_chat_id, text=_["call_6"])
+                    try:
+                        await app.send_message(original_chat_id, text=_["call_6"])
+                    except:
+                        pass
                     await _clear_(chat_id)
                     return
 
@@ -505,12 +499,12 @@ class Call(PyTgCalls):
                 db[chat_id][0]["markup"] = "stream"
 
             elif "index_" in queued:
-                if is_video:
-                    stream = MediaStream( videoid, audio_parameters=DEFAULT_AQ, video_parameters=DEFAULT_VQ )
-                else:
-                    stream = MediaStream( videoid, audio_parameters=ELSE_AQ )
+                stream = dynamic_media_stream(videoid, video=is_video)
                 if not await self.attempt_stream(client, chat_id, stream):
-                    await app.send_message(original_chat_id, text=_["call_6"])
+                    try:
+                        await app.send_message(original_chat_id, text=_["call_6"])
+                    except:
+                        pass
                     await _clear_(chat_id)
                     return
                 button = stream_markup(_, chat_id)
@@ -524,13 +518,13 @@ class Call(PyTgCalls):
                 db[chat_id][0]["markup"] = "tg"
 
             else:
-                if is_video:
-                    stream = MediaStream( queued, audio_parameters=DEFAULT_AQ, video_parameters=DEFAULT_VQ )
-                else:
-                    stream = MediaStream( queued, audio_parameters=ELSE_AQ )
+                stream = dynamic_media_stream(queued, video=is_video)
 
                 if not await self.attempt_stream(client, chat_id, stream):
-                    await app.send_message(original_chat_id, text=_["call_6"])
+                    try:
+                        await app.send_message(original_chat_id, text=_["call_6"])
+                    except:
+                        pass
                     await _clear_(chat_id)
                     return
 
@@ -586,8 +580,7 @@ class Call(PyTgCalls):
         return str(round(sum(pings) / len(pings), 3))
 
     async def start(self):
-        # Start all PyTgCalls instances once from this single Signal instance
-        LOGGER(__name__).info("Initializing PyTgCalls Clients...\n")
+        LOGGER(__name__).info("Starting PyTgCalls Drivers...")
         if config.STRING1:
             await self.one.start()
         if config.STRING2:
@@ -616,7 +609,6 @@ class Call(PyTgCalls):
         @self.four.on_left()
         @self.five.on_left()
         async def stream_services_handler(_, chat_id: int):
-            # Clearing state and avoid redundant leaves as previous one stored resulted loop on db
             await self.stop_stream(chat_id)
 
         @self.one.on_stream_end()
@@ -633,7 +625,7 @@ class Call(PyTgCalls):
                 await _clear_(chat_id)
                 try:
                     await client.leave_group_call(chat_id)
-                except NoActiveGroupCall:
+                except (NoActiveGroupCall, NotInGroupCallError):
                     pass
 
 
