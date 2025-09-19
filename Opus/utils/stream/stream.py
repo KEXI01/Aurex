@@ -1,7 +1,6 @@
 import os
 from random import randint
 from typing import Union
-
 from pyrogram.types import InlineKeyboardMarkup
 
 import config
@@ -31,8 +30,13 @@ async def stream(
 ):
     if not result:
         return
+
+    # Normalize to strict bool for downstream MediaStream builder
+    is_video = bool(video)
+
     if forceplay:
         await Signal.force_stop_stream(chat_id)
+
     if streamtype == "playlist":
         msg = f"{_['play_19']}\n\n"
         count = 0
@@ -40,19 +44,16 @@ async def stream(
             if int(count) == config.PLAYLIST_FETCH_LIMIT:
                 continue
             try:
-                (
-                    title,
-                    duration_min,
-                    duration_sec,
-                    thumbnail,
-                    vidid,
-                ) = await YouTube.details(search, False if spotify else True)
+                title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(
+                    search, False if spotify else True
+                )
             except:
                 continue
             if str(duration_min) == "None":
                 continue
             if duration_sec > config.DURATION_LIMIT:
                 continue
+
             if await is_active_chat(chat_id):
                 await put_queue(
                     chat_id,
@@ -63,7 +64,7 @@ async def stream(
                     user_name,
                     vidid,
                     user_id,
-                    "video" if video else "audio",
+                    "video" if is_video else "audio",
                 )
                 position = len(db.get(chat_id)) - 1
                 count += 1
@@ -72,10 +73,9 @@ async def stream(
             else:
                 if not forceplay:
                     db[chat_id] = []
-                status = True if video else None
                 try:
                     file_path, direct = await YouTube.download(
-                        vidid, mystic, video=status, videoid=True
+                        vidid, mystic, videoid=True, video=is_video
                     )
                 except:
                     raise AssistantErr(_["play_14"])
@@ -83,7 +83,7 @@ async def stream(
                     chat_id,
                     original_chat_id,
                     file_path,
-                    video=status,
+                    video=is_video,
                     image=thumbnail,
                 )
                 await put_queue(
@@ -95,7 +95,7 @@ async def stream(
                     user_name,
                     vidid,
                     user_id,
-                    "video" if video else "audio",
+                    "video" if is_video else "audio",
                     forceplay=forceplay,
                 )
                 img = await get_thumb(vidid)
@@ -113,6 +113,7 @@ async def stream(
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
+
         if count == 0:
             return
         else:
@@ -130,19 +131,21 @@ async def stream(
                 caption=_["play_21"].format(position, link),
                 reply_markup=upl,
             )
+
     elif streamtype == "youtube":
         link = result["link"]
         vidid = result["vidid"]
         title = (result["title"]).title()
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
-        status = True if video else None
+
         try:
             file_path, direct = await YouTube.download(
-                vidid, mystic, videoid=True, video=status
+                vidid, mystic, videoid=True, video=is_video
             )
         except:
             raise AssistantErr(_["play_14"])
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -153,7 +156,7 @@ async def stream(
                 user_name,
                 vidid,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
@@ -169,7 +172,7 @@ async def stream(
                 chat_id,
                 original_chat_id,
                 file_path,
-                video=status,
+                video=is_video,
                 image=thumbnail,
             )
             await put_queue(
@@ -181,7 +184,7 @@ async def stream(
                 user_name,
                 vidid,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
                 forceplay=forceplay,
             )
             img = await get_thumb(vidid)
@@ -199,10 +202,12 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
+
     elif streamtype == "soundcloud":
         file_path = result["filepath"]
         title = result["title"]
         duration_min = result["duration_min"]
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -225,7 +230,7 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await Signal.join_call(chat_id, original_chat_id, file_path, video=None)
+            await Signal.join_call(chat_id, original_chat_id, file_path, video=False)
             await put_queue(
                 chat_id,
                 original_chat_id,
@@ -249,12 +254,13 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
     elif streamtype == "telegram":
         file_path = result["path"]
         link = result["link"]
         title = (result["title"]).title()
         duration_min = result["dur"]
-        status = True if video else None
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -265,7 +271,7 @@ async def stream(
                 user_name,
                 streamtype,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
@@ -277,7 +283,7 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await Signal.join_call(chat_id, original_chat_id, file_path, video=status)
+            await Signal.join_call(chat_id, original_chat_id, file_path, video=is_video)
             await put_queue(
                 chat_id,
                 original_chat_id,
@@ -287,27 +293,28 @@ async def stream(
                 user_name,
                 streamtype,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
                 forceplay=forceplay,
             )
-            if video:
+            if is_video:
                 await add_active_video_chat(chat_id)
             button = stream_markup(_, chat_id)
             run = await app.send_photo(
                 original_chat_id,
-                photo=config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL,
+                photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
                 caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
     elif streamtype == "live":
         link = result["link"]
         vidid = result["vidid"]
         title = (result["title"]).title()
         thumbnail = result["thumb"]
         duration_min = "Live Track"
-        status = True if video else None
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -318,7 +325,7 @@ async def stream(
                 user_name,
                 vidid,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
@@ -337,7 +344,7 @@ async def stream(
                 chat_id,
                 original_chat_id,
                 file_path,
-                video=status,
+                video=is_video,
                 image=thumbnail if thumbnail else None,
             )
             await put_queue(
@@ -349,7 +356,7 @@ async def stream(
                 user_name,
                 vidid,
                 user_id,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
                 forceplay=forceplay,
             )
             img = await get_thumb(vidid)
@@ -367,10 +374,12 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
     elif streamtype == "index":
         link = result
         title = "ɪɴᴅᴇx ᴏʀ ᴍ3ᴜ8 ʟɪɴᴋ"
         duration_min = "00:00"
+
         if await is_active_chat(chat_id):
             await put_queue_index(
                 chat_id,
@@ -380,7 +389,7 @@ async def stream(
                 duration_min,
                 user_name,
                 link,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
@@ -395,7 +404,7 @@ async def stream(
                 chat_id,
                 original_chat_id,
                 link,
-                video=True if video else None,
+                video=is_video,
             )
             await put_queue_index(
                 chat_id,
@@ -405,7 +414,7 @@ async def stream(
                 duration_min,
                 user_name,
                 link,
-                "video" if video else "audio",
+                "video" if is_video else "audio",
                 forceplay=forceplay,
             )
             button = stream_markup(_, chat_id)
