@@ -9,7 +9,10 @@ console = Console()
 
 WATCH_FOLDER = "downloads"
 BOT_TOKEN = "
-CHAT_ID = "
+
+# destinations (group/channel)
+CHAT_ID_MAIN = "
+CHAT_ID_SUPPORT = "
 TEMP_FILE = "temp.json"
 
 
@@ -58,7 +61,7 @@ def send_file(bot_token, chat_id, filename, caption=""):
         )
 
         with progress:
-            task_id = progress.add_task("[cyan]Uploading...", total=file_size)
+            task_id = progress.add_task(f"[cyan]Uploading to {chat_id}...", total=file_size)
             progress_file = ProgressFile(filename, progress, task_id)
 
             multipart_data = {
@@ -70,14 +73,14 @@ def send_file(bot_token, chat_id, filename, caption=""):
             response = requests.post(url, files=multipart_data)
 
         if response.ok:
-            console.print(f"[bold green]File '{os.path.basename(filename)}' sent successfully![/bold green]")
+            console.print(f"[bold green]File '{os.path.basename(filename)}' sent successfully to {chat_id}![/bold green]")
             return True
         else:
-            console.print(f"[bold red]Failed to send file: {response.text}[/bold red]")
+            console.print(f"[bold red]Failed to send file to {chat_id}: {response.text}[/bold red]")
             return False
 
     except Exception as e:
-        console.print(f"[bold red]Error sending {filename}: {e}[/bold red]")
+        console.print(f"[bold red]Error sending {filename} to {chat_id}: {e}[/bold red]")
         return False
 
 
@@ -137,11 +140,16 @@ def watch_folder():
                         continue
 
                     caption = get_caption(f)
-                    if send_file(BOT_TOKEN, CHAT_ID, f, caption):
+
+                    #  Send to main + support
+                    success_main = send_file(BOT_TOKEN, CHAT_ID_MAIN, f, caption)
+                    success_support = send_file(BOT_TOKEN, CHAT_ID_SUPPORT, f, caption)
+
+                    if success_main and success_support:
                         sent_files.add(f)
                         save_sent_files(sent_files)
 
-            time.sleep(2)  # lightweight polling
+            time.sleep(4)  # lightweight polling
         except KeyboardInterrupt:
             console.print("[red]Stopped watching.[/red]")
             break
