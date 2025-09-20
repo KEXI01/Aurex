@@ -7,7 +7,7 @@ from rich.console import Console
 console = Console()
 
 WATCH_FOLDER = "downloads"
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = ""
 
 # destinations (group or channel)
 CHAT_ID_MAIN = ""
