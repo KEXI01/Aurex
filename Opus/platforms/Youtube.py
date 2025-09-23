@@ -31,10 +31,10 @@ async def download_cookies_from_url(url):
                         f.write(await response.read())
                     return temp_path
                 else:
-                    logger.error(f"Failed to download cookies: HTTP {response.status}")
+                    logger.error(f"Failed to download cookies from {url}: HTTP {response.status}")
                     return None
     except Exception as e:
-        logger.error(f"Exception while downloading cookies: {e}")
+        logger.error(f"Exception while downloading cookies from {url}: {e}")
         return None
 
 async def cookie_txt_file():
@@ -42,21 +42,33 @@ async def cookie_txt_file():
     if _cookie_cache:
         return _cookie_cache
 
-    remote_url = config.API
-    local_path = await download_cookies_from_url(remote_url)
+    primary_url = "https://ar-api-iauy.onrender.com/mp3youtube"
+    backup_url = "https://ashlynn-repo.vercel.app/cobolt"
 
+    # Try primary URL first
+    local_path = await download_cookies_from_url(primary_url)
     if local_path:
         filename = f"{os.getcwd()}/cookies/logs.csv"
         with open(filename, 'a') as file:
-            file.write(f'Using remote cookies from: {remote_url}\n')
+            file.write(f'Using primary cookies from: {primary_url}\n')
         _cookie_cache = local_path
         return local_path
 
+    # Fallback to backup URL
+    local_path = await download_cookies_from_url(backup_url)
+    if local_path:
+        filename = f"{os.getcwd()}/cookies/logs.csv"
+        with open(filename, 'a') as file:
+            file.write(f'Using backup cookies from: {backup_url}\n')
+        _cookie_cache = local_path
+        return local_path
+
+    # Fallback to local files if both remote URLs fail
     folder_path = f"{os.getcwd()}/cookies"
     txt_files = glob.glob(os.path.join(folder_path, '*.txt'))
     if not txt_files:
-        logger.error("No .txt cookie files found locally and remote download failed.")
-        raise FileNotFoundError("No .txt files found in the specified folder and remote download failed.")
+        logger.error("No .txt cookie files found locally and remote downloads failed.")
+        raise FileNotFoundError("No .txt files found in the specified folder and remote downloads failed.")
     cookie_txt_file = random.choice(txt_files)
     filename = f"{os.getcwd()}/cookies/logs.csv"
     with open(filename, 'a') as file:
