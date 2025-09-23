@@ -20,7 +20,7 @@ API_URL = "https://jiosaavan-rho.vercel.app/api/search/songs"
 
 def cookie_txt_file():
     cookie_dir = f"{os.getcwd()}/cookies"
-    cookies Fries = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+    cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
     cookie_file = os.path.join(cookie_dir, random.choice(cookies_files))
     return cookie_file
 
