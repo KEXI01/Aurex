@@ -12,7 +12,6 @@ from youtubesearchpython.__future__ import VideosSearch
 from Opus.utils.database import is_on_off
 from Opus.utils.formatters import time_to_seconds
 
-# Single API for downloading MP3 and MP4
 API_URL = "https://ar-api-iauy.onrender.com/mp3youtube"
 
 def cookie_txt_file():
@@ -42,7 +41,7 @@ async def download_song(link: str, download_mode: str = "audio") -> Optional[str
 
     os.makedirs(download_folder, exist_ok=True)
 
-    # Construct API URL with format parameter (assuming API supports it)
+    # Construct API URL with format parameter
     api_url = f"{API_URL}?url=https://www.youtube.com/watch?v={video_id}&format={file_extension}"
     
     async with aiohttp.ClientSession() as session:
@@ -130,26 +129,11 @@ class YouTubeAPI:
         return link.split('v=')[-1].split('&')[0] if '&' in link else link
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
-        """
-        Check if a link is a valid YouTube URL.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            bool: True if the link is a valid YouTube URL.
-        """
         if videoid:
             link = self.base + link
         return bool(re.search(self.regex, link))
 
     async def url(self, message_1: Message) -> Optional[str]:
-        """
-        Extract a YouTube URL from a message or its reply.
-        Args:
-            message_1 (Message): Pyrogram message object.
-        Returns:
-            Optional[str]: Extracted URL or None if not found.
-        """
         messages = [message_1]
         if message_1.reply_to_message:
             messages.append(message_1.reply_to_message)
@@ -167,14 +151,6 @@ class YouTubeAPI:
         return None
 
     async def details(self, link: str, videoid: Union[bool, str] = None) -> Tuple[str, str, int, str, str]:
-        """
-        Fetch video details (title, duration, thumbnail, video ID).
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            Tuple[str, str, int, str, str]: Title, duration (min), duration (sec), thumbnail, video ID.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -191,14 +167,6 @@ class YouTubeAPI:
             return "", "0:00", 0, "", ""
 
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str:
-        """
-        Fetch video title.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            str: Video title or empty string if failed.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -210,14 +178,6 @@ class YouTubeAPI:
             return ""
 
     async def duration(self, link: str, videoid: Union[bool, str] = None) -> str:
-        """
-        Fetch video duration.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            str: Duration (e.g., "4:20") or "0:00" if failed.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -229,14 +189,6 @@ class YouTubeAPI:
             return "0:00"
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str:
-        """
-        Fetch video thumbnail URL.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            str: Thumbnail URL or empty string if failed.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -248,14 +200,6 @@ class YouTubeAPI:
             return ""
 
     async def video(self, link: str, videoid: Union[bool, str] = None) -> Tuple[int, str]:
-        """
-        Get the best video stream URL (up to 720p) using yt-dlp.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            Tuple[int, str]: (status, URL or error message).
-        """
         if videoid:
             link = self.base + link
         proc = await asyncio.create_subprocess_exec(
@@ -274,16 +218,6 @@ class YouTubeAPI:
         return 0, stderr.decode()
 
     async def playlist(self, link: str, limit: int, user_id: int, videoid: Union[bool, str] = None) -> list:
-        """
-        Fetch video IDs from a YouTube playlist.
-        Args:
-            link (str): Playlist URL or ID.
-            limit (int): Maximum number of videos to fetch.
-            user_id (int): User ID (for context, unused in logic).
-            videoid (Union[bool, str]): Optional playlist ID.
-        Returns:
-            list: List of video IDs.
-        """
         if videoid:
             link = self.listbase + link
         if "&" in link:
@@ -298,14 +232,6 @@ class YouTubeAPI:
             return []
 
     async def track(self, link: str, videoid: Union[bool, str] = None) -> Tuple[dict, str]:
-        """
-        Fetch track details (title, link, video ID, duration, thumbnail).
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            Tuple[dict, str]: Track details dictionary and video ID.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -324,14 +250,6 @@ class YouTubeAPI:
             return {}, ""
 
     async def formats(self, link: str, videoid: Union[bool, str] = None) -> Tuple[list, str]:
-        """
-        Fetch available video formats using yt-dlp.
-        Args:
-            link (str): YouTube URL or video ID.
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            Tuple[list, str]: List of format details and video URL.
-        """
         if videoid:
             link = self.base + link
         if "&" in link:
@@ -361,15 +279,6 @@ class YouTubeAPI:
                 return [], link
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None) -> Tuple[str, str, str, str]:
-        """
-        Fetch details for a related video (slider).
-        Args:
-            link (str): YouTube URL or video ID.
-            query_type (int): Index of related video (0-9).
-            videoid (Union[bool, str]): Optional video ID.
-        Returns:
-            Tuple[str, str, str, str]: Title, duration, thumbnail, video ID.
-        """
         video_id = self._extract_video_id(link, videoid)
         link = self.base + video_id
         try:
@@ -396,28 +305,13 @@ class YouTubeAPI:
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
     ) -> Tuple[Optional[str], bool]:
-        """
-        Download a YouTube video or audio.
-        Args:
-            link (str): YouTube URL or video ID.
-            mystic: Context object (e.g., Pyrogram message).
-            video (Union[bool, str]): If True, download video.
-            videoid (Union[bool, str]): Optional video ID.
-            songaudio (Union[bool, str]): If True, download audio with custom format.
-            songvideo (Union[bool, str]): If True, download video with custom format.
-            format_id (Union[bool, str]): yt-dlp format ID for custom downloads.
-            title (Union[bool, str]): Custom title for file naming.
-        Returns:
-            Tuple[Optional[str], bool]: File path and success status.
-        """
         if videoid:
             link = self.base + link
 
         loop = asyncio.get_running_loop()
 
-        def audio_dl() -> str:
-            """Download audio using yt-dlp as fallback."""
-            ydl_opts = {
+        def audio_dl():
+            ydl_optssx = {
                 "format": "bestaudio/best",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
@@ -426,17 +320,16 @@ class YouTubeAPI:
                 "cookiefile": cookie_txt_file(),
                 "no_warnings": True,
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                file_path = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                if os.path.exists(file_path):
-                    return file_path
-                ydl.download([link])
-                return file_path
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            info = x.extract_info(link, download=False)
+            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            if os.path.exists(xyz):
+                return xyz
+            x.download([link])
+            return xyz
 
-        def video_dl() -> str:
-            """Download video using yt-dlp as fallback."""
-            ydl_opts = {
+        def video_dl():
+            ydl_optssx = {
                 "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
@@ -445,19 +338,18 @@ class YouTubeAPI:
                 "cookiefile": cookie_txt_file(),
                 "no_warnings": True,
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                file_path = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                if os.path.exists(file_path):
-                    return file_path
-                ydl.download([link])
-                return file_path
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            info = x.extract_info(link, download=False)
+            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            if os.path.exists(xyz):
+                return xyz
+            x.download([link])
+            return xyz
 
-        def song_video_dl() -> str:
-            """Download video with custom format using yt-dlp."""
+        def song_video_dl():
             formats = f"{format_id}+140"
             fpath = f"downloads/{title}"
-            ydl_opts = {
+            ydl_optssx = {
                 "format": formats,
                 "outtmpl": fpath,
                 "geo_bypass": True,
@@ -468,14 +360,13 @@ class YouTubeAPI:
                 "prefer_ffmpeg": True,
                 "merge_output_format": "mp4",
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([link])
-                return f"{fpath}.mp4"
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            x.download([link])
+            return f"{fpath}.mp4"
 
-        def song_audio_dl() -> str:
-            """Download audio with custom format using yt-dlp."""
+        def song_audio_dl():
             fpath = f"downloads/{title}.%(ext)s"
-            ydl_opts = {
+            ydl_optssx = {
                 "format": format_id,
                 "outtmpl": fpath,
                 "geo_bypass": True,
@@ -492,27 +383,32 @@ class YouTubeAPI:
                     }
                 ],
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([link])
-                return f"{fpath[:-7]}.mp3"
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            x.download([link])
+            return f"{fpath[:-7]}.mp3"
 
-        try:
-            if songvideo or songaudio:
-                # Use API for custom audio/video downloads
-                download_mode = "video" if songvideo else "audio"
-                downloaded_file = await download_song(link, download_mode)
+        # For video streaming (return streaming URL for VC)
+        if video:
+            if await is_on_off(1):
+                downloaded_file = await download_song(link, "video")
                 if downloaded_file:
                     return downloaded_file, True
-                # Fallback to yt-dlp for custom formats
-                downloaded_file = await loop.run_in_executor(None, song_video_dl if songvideo else song_audio_dl)
-                return downloaded_file, True
-            elif video:
-                if await is_on_off(1):
-                    # Use API for video downloads if enabled
-                    downloaded_file = await download_song(link, "video")
-                    if downloaded_file:
-                        return downloaded_file, True
-                # Check file size before falling back to yt-dlp
+            # Use yt-dlp to get streaming URL for video (critical for VC)
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp",
+                "--cookies", cookie_txt_file(),
+                "-g",
+                "-f",
+                "best[height<=?720][width<=?1280]",
+                link,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if stdout:
+                downloaded_file = stdout.decode().split("\n")[0]
+                direct = False  # Indicates streaming URL
+            else:
                 file_size = await check_file_size(link)
                 if not file_size:
                     print("[Download Error] Could not determine file size")
@@ -521,17 +417,21 @@ class YouTubeAPI:
                 if total_size_mb > 250:
                     print(f"[Download Error] File size {total_size_mb:.2f} MB exceeds 250MB limit")
                     return None, False
-                # Fallback to yt-dlp for video
+                direct = True  # Indicates local file
                 downloaded_file = await loop.run_in_executor(None, video_dl)
+            return downloaded_file, direct
+        # For audio (songaudio, songvideo, or default audio)
+        else:
+            if songvideo or songaudio:
+                download_mode = "video" if songvideo else "audio"
+                downloaded_file = await download_song(link, download_mode)
+                if downloaded_file:
+                    return downloaded_file, True
+                downloaded_file = await loop.run_in_executor(None, song_video_dl if songvideo else song_audio_dl)
                 return downloaded_file, True
             else:
-                # Use API for audio downloads
                 downloaded_file = await download_song(link, "audio")
                 if downloaded_file:
                     return downloaded_file, True
-                # Fallback to yt-dlp for audio
                 downloaded_file = await loop.run_in_executor(None, audio_dl)
                 return downloaded_file, True
-        except Exception as e:
-            print(f"[Download Error] Failed to download: {e}")
-            return None, False
