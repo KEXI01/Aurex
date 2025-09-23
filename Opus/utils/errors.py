@@ -9,7 +9,7 @@ from pyrogram.errors.exceptions.forbidden_403 import ChatWriteForbidden
 
 from Opus import app
 from Opus.utils.exceptions import is_ignored_error
-from Opus.utils.pastebin import OpusBin
+from Opus.utils.pastebin import SignalBin as OpusVBin
 
 INTERNAL_ERROR_LOG_FILE = "internal_errors.log"  # Single file for all internal errors
 
