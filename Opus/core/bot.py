@@ -1,8 +1,8 @@
-import uvloop
-uvloop.install()
-
-
 import asyncio
+import uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 import sys
 from pyrogram import Client, errors
@@ -10,7 +10,6 @@ from pyrogram.enums import ChatMemberStatus, ParseMode
 
 import config
 from ..logging import LOGGER
-
 
 
 class Signal(Client):
@@ -23,7 +22,7 @@ class Signal(Client):
             in_memory=True,
             workers=30,
             max_concurrent_transmissions=7,
-            parse_mode=ParseMode.HTML,  # Ensures safe HTML parsing
+            parse_mode=ParseMode.HTML,
         )
         LOGGER(__name__).info("🧠 Oᴘᴜs ᴀssɪsᴛᴀɴᴛ ᴇɴɢɪɴᴇ ɪɴɪᴛɪᴀʟɪᴢᴇᴅ...")
 
