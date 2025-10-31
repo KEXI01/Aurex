@@ -20,6 +20,7 @@ if not logger.hasHandlers():
 
 _cookie_cache = None
 
+
 async def download_cookies_from_url(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -36,6 +37,7 @@ async def download_cookies_from_url(url):
     except Exception as e:
         logger.error(f"Exception while downloading cookies: {e}")
         return None
+
 
 async def cookie_txt_file():
     global _cookie_cache
@@ -63,6 +65,7 @@ async def cookie_txt_file():
         file.write(f'Fallback to local file: {cookie_txt_file}\n')
     _cookie_cache = f"cookies/{str(cookie_txt_file).split('/')[-1]}"
     return _cookie_cache
+
 
 async def check_file_size(link):
     async def get_format_info(link, cookie_file):
@@ -92,6 +95,7 @@ async def check_file_size(link):
     total_size = parse_size(formats)
     return total_size
 
+
 async def shell_cmd(cmd):
     proc = await asyncio.create_subprocess_shell(
         cmd,
@@ -107,6 +111,7 @@ async def shell_cmd(cmd):
             logger.error(f"Shell command error: {error_msg}")
             return error_msg
     return out.decode("utf-8")
+
 
 class YouTubeAPI:
     def __init__(self):
@@ -183,8 +188,9 @@ class YouTubeAPI:
 
         def video_dl():
             ydl_opts = {
-                "format": "(bestvideo[height<=720][width<=1280][ext=mp4])+(bestaudio[ext=m4a]/bestaudio)",
+                "format": "(bestvideo[ext=mp4][height<=720]/bestvideo[ext=webm][height<=720]/bestvideo)+(bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio)",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
+                "merge_output_format": "mp4",
                 "geo_bypass": True,
                 "age_limit": 0,
                 "nocheckcertificate": True,
@@ -287,7 +293,6 @@ class YouTubeAPI:
         loop = asyncio.get_running_loop()
 
         def audio_dl():
-            # Prefer audio-only containers first: m4a, webm, then generic bestaudio
             ydl_optssx = {
                 "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
@@ -312,8 +317,9 @@ class YouTubeAPI:
 
         def video_dl():
             ydl_optssx = {
-                "format": "(bestvideo[height<=720][width<=1280][ext=mp4])+(bestaudio[ext=m4a]/bestaudio)",
+                "format": "(bestvideo[ext=mp4][height<=720]/bestvideo[ext=webm][height<=720]/bestvideo)+(bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio)",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
+                "merge_output_format": "mp4",
                 "geo_bypass": True,
                 "age_limit": 0,
                 "nocheckcertificate": True,
@@ -353,7 +359,6 @@ class YouTubeAPI:
             logger.info(f"Completed song+video download: {fpath}.mp4")
             return f"{fpath}.mp4"
 
-        # song audio extractor (convert to mp3 only if dlp master fails to get formats)
         def song_audio_dl():
             fpath = f"downloads/{title}.%(ext)s"
             ydl_optssx = {
@@ -384,8 +389,6 @@ class YouTubeAPI:
         elif songaudio:
             return await loop.run_in_executor(None, song_audio_dl)
         elif video:
-            if False:
-                return await loop.run_in_executor(None, video_dl)
             file_size = await check_file_size(link)
             if not file_size:
                 logger.warning("File size check failed, aborting video download.")
