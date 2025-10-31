@@ -191,6 +191,7 @@ class YouTubeAPI:
                 "quiet": True,
                 "cookiefile": cookie_file,
                 "no_warnings": True,
+                "concurrent_fragment_downloads": 32,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(link, download=False)
@@ -296,6 +297,7 @@ class YouTubeAPI:
                 "quiet": True,
                 "cookiefile": cookie_file,
                 "no_warnings": True,
+                "concurrent_fragment_downloads": 32,
             }
             with yt_dlp.YoutubeDL(ydl_optssx) as ydl:
                 info = ydl.extract_info(link, download=False)
