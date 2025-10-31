@@ -157,6 +157,7 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         cookie_file = await cookie_txt_file()
+        
         def video_dl():
             ydl_opts = {
                 "format": "(bestvideo[height<=720][width<=1280][ext=mp4])+(bestaudio[ext=m4a]/bestaudio)",
@@ -338,7 +339,7 @@ class YouTubeAPI:
                 "quiet": True,
                 "cookiefile": cookie_file,
                 "prefer_ffmpeg": True,
-                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"}],
+                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
             }
             with yt_dlp.YoutubeDL(ydl_optssx) as ydl:
                 ydl.download([link])
