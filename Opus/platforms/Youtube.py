@@ -1,13 +1,13 @@
-import asyncio
 import os
 import re
 import glob
 import random
 import logging
 import aiohttp
-from typing import Union
 import yt_dlp
 import config
+import asyncio
+from typing import Union
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
@@ -287,8 +287,9 @@ class YouTubeAPI:
         loop = asyncio.get_running_loop()
 
         def audio_dl():
+            # Prefer audio-only containers first: m4a, webm, then generic bestaudio
             ydl_optssx = {
-                "format": "bestaudio/best",
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "age_limit": 0,
@@ -296,6 +297,7 @@ class YouTubeAPI:
                 "quiet": True,
                 "cookiefile": cookie_file,
                 "no_warnings": True,
+                "concurrent_fragment_downloads": 56,
             }
             with yt_dlp.YoutubeDL(ydl_optssx) as ydl:
                 info = ydl.extract_info(link, download=False)
@@ -318,6 +320,7 @@ class YouTubeAPI:
                 "quiet": True,
                 "cookiefile": cookie_file,
                 "no_warnings": True,
+                "concurrent_fragment_downloads": 56,
             }
             with yt_dlp.YoutubeDL(ydl_optssx) as ydl:
                 info = ydl.extract_info(link, download=False)
@@ -350,6 +353,7 @@ class YouTubeAPI:
             logger.info(f"Completed song+video download: {fpath}.mp4")
             return f"{fpath}.mp4"
 
+        # song audio extractor (convert to mp3 only if dlp master fails to get formats)
         def song_audio_dl():
             fpath = f"downloads/{title}.%(ext)s"
             ydl_optssx = {
@@ -366,7 +370,7 @@ class YouTubeAPI:
                     {
                         "key": "FFmpegExtractAudio",
                         "preferredcodec": "mp3",
-                        "preferredquality": "320",
+                        "preferredquality": "192",
                     }
                 ],
             }
@@ -392,4 +396,4 @@ class YouTubeAPI:
                 return None
             return await loop.run_in_executor(None, video_dl)
         else:
-            return await loop.run_in_executor(None, audio_dl), True
+            return await loop.run_in_executor(None, audio_dl)
