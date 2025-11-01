@@ -107,7 +107,7 @@ def truncate_title(text, max_words=25, max_chars=120, hard_char_limit=25):
     if len(words) > max_words or len(text) > max_chars:
         text = " ".join(words[:max_words])[:max_chars].rstrip()
     if len(text) > hard_char_limit:
-        text = text[:hard_char_limit].rstrip() + ".."
+        text = text[:hard_char_limit].rstrip() + "."
     return text
 
 
@@ -122,7 +122,7 @@ def choose_title_font(text, max_width, max_lines=2):
             fits = all(d.textlength(line, font=f) <= max_width for line in lines)
             if fits:
                 return f
-    return load_font(TITLE_FONT_PATH, 26)
+    return load_font(TITLE_FONT_PATH, 24)
 
 
 # --- Main thumbnail generator ---
