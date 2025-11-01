@@ -12,13 +12,14 @@ from config import FAILED
 # --- Constants ---
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
-FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+MAIN_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FALLBACK_FONT = "src/assets/font2.ttf"
 
 
 # --- Font loader ---
-def load_font(path: str, size: int):
+def load_font(size: int):
     try:
-        return ImageFont.truetype(path, size)
+        return ImageFont.truetype(MAIN_FONT, size)
     except Exception:
         return ImageFont.truetype(FALLBACK_FONT, size)
 
@@ -34,7 +35,6 @@ def get_dominant_color_and_brightness(img: Image.Image):
     r, g, b = common
     brightness = (0.299 * r + 0.587 * g + 0.114 * b)
     tone = "dark" if brightness < 128 else "light"
-    # Desaturate slightly for progress color
     avg = (r + g + b) // 3
     r, g, b = (int((r + avg) / 2), int((g + avg) / 2), int((b + avg) / 2))
     return (r, g, b), tone
@@ -112,28 +112,28 @@ async def get_thumb(videoid: str) -> str:
     # --- Base image ---
     base = Image.open(thumb_path).convert("RGBA").resize((1280, 720))
     dom_color, tone = get_dominant_color_and_brightness(base)
-    text_color = "white" if tone == "dark" else "#222222"
-    meta_color = "#DDDDDD" if tone == "dark" else "#333333"
+    text_color = "#E6E6E6"
+    meta_color = "#B0B0B0"
 
-    # --- Background blur & gradient ---
+    # --- Background blur & deeper overlay ---
     bg = await blur_image(base, 25)
-    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180 if tone == "dark" else 100))
+    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 210))
     bg = Image.alpha_composite(bg, dark_overlay)
 
-    # Gradient overlay for cinematic depth
+    # Gradient overlay
     gradient = Image.new("L", (1, 720))
     for y in range(720):
         gradient.putpixel((0, y), int(255 * (y / 720)))
     alpha = gradient.resize(bg.size)
-    black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 120))
+    black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 160))
     bg = Image.composite(black_grad, bg, alpha)
 
     draw = ImageDraw.Draw(bg)
 
     # --- Fonts ---
-    title_font = load_font("src/assets/font2.ttf", 30)
-    meta_font = load_font("src/assets/font.ttf", 24)
-    time_font = load_font("src/assets/font.ttf", 22)
+    title_font = load_font(34)
+    meta_font = load_font(24)
+    time_font = load_font(22)
 
     # --- Left thumbnail ---
     thumb_w, thumb_h = 500, 280
@@ -149,7 +149,7 @@ async def get_thumb(videoid: str) -> str:
     shadow = shadow.filter(ImageFilter.GaussianBlur(15))
     bg.paste(shadow, (thumb_x - 10, thumb_y - 10), shadow)
 
-    # Rounded mask
+    # Rounded mask for thumbnail
     mask = Image.new("L", (thumb_w, thumb_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, thumb_w, thumb_h), 25, fill=255)
     bg.paste(thumb, (thumb_x, thumb_y), mask)
@@ -172,22 +172,23 @@ async def get_thumb(videoid: str) -> str:
     meta_lines = wrap_text(meta_text, meta_font, text_max_w, max_lines=1)
     draw_text_with_shadow(draw, (text_x, meta_y), meta_lines[0], meta_font, meta_color)
 
-    # --- Progress bar with glow ---
+    # --- Progress bar ---
     bar_start = text_x
     bar_y = meta_y + 80
     total_len = 550
     prog_len = int(total_len * 0.35)
 
-    # Glow layer
+    # Glow layer (darker)
     glow = Image.new("RGBA", bg.size, (0, 0, 0, 0))
     gdraw = ImageDraw.Draw(glow)
-    gdraw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=30)
+    glow_col = tuple(int(c * 0.8) for c in dom_color)
+    gdraw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=glow_col, width=30)
     glow = glow.filter(ImageFilter.GaussianBlur(15))
     bg = Image.alpha_composite(bg, glow)
 
-    # Actual progress bar
+    # Actual bar
     draw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=8)
-    draw.line([(bar_start + prog_len, bar_y), (bar_start + total_len, bar_y)], fill="#555555", width=6)
+    draw.line([(bar_start + prog_len, bar_y), (bar_start + total_len, bar_y)], fill="#333333", width=6)
     draw.ellipse(
         [(bar_start + prog_len - 10, bar_y - 10), (bar_start + prog_len + 10, bar_y + 10)],
         fill=dom_color,
@@ -205,7 +206,7 @@ async def get_thumb(videoid: str) -> str:
         fill=end_fill,
     )
 
-    # --- Save final ---
+    # --- Save ---
     bg.save(cache_path)
     try:
         os.remove(thumb_path)
