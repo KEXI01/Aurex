@@ -6,7 +6,7 @@ from functools import partial
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from youtubesearchpython.__future__ import VideosSearch
 from collections import Counter
-from config import FAILED 
+from config import FAILED
 
 # --- Constants ---
 CACHE_DIR = "cache"
@@ -101,7 +101,7 @@ def wrap_text_multilingual(text, font, max_width, max_lines=2, draw=None):
     joined = "".join(lines)
     if len(joined) < len(text):
         last = lines[-1]
-        ellipsis = "…"
+        ellipsis = "..."
         while True:
             candidate = last + ellipsis
             cbox = draw.textbbox((0, 0), candidate, font=font)
@@ -135,7 +135,7 @@ def truncate_title(text, max_words=25, max_chars=120, hard_char_limit=25):
     if len(words) > max_words or len(text) > max_chars:
         text = " ".join(words[:max_words])[:max_chars].rstrip()
     if len(text) > hard_char_limit:
-        text = text[:hard_char_limit].rstrip() + "…"
+        text = text[:hard_char_limit].rstrip() + "..."
     return text
 
 
@@ -207,13 +207,13 @@ async def get_thumb(videoid: str) -> str:
     # --- Background blur & gradient ---
     bg = await blur_image(base, 25)
     dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180 if tone == "dark" else 100))
-    bg = Image from alpha_composite(bg, dark_overlay)
+    bg = Image.alpha_composite(bg, dark_overlay)
 
     # Gradient overlay
     gradient = Image.new("L", (1, 720))
     draw_grad = ImageDraw.Draw(gradient)
     for y in range(720):
-        draw_grad.point((0, y), int(255 * (1 - y / 720)))  # Top dark → bottom light
+        draw_grad.point((0, y), int(255 * (1 - y / 720)))  # Top dark to bottom light
     alpha = gradient.resize(bg.size)
     black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 120))
     bg = Image.composite(black_grad, bg, alpha)
