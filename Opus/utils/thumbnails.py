@@ -12,16 +12,34 @@ from config import FAILED
 # --- Constants ---
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
-MAIN_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-FALLBACK_FONT = "src/assets/font2.ttf"
+FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+PRIMARY_FONT_DIR = "/usr/share/fonts/truetype/josefinsans"
+PRIMARY_FONT = os.path.join(PRIMARY_FONT_DIR, "JosefinSans-Regular.ttf")
+
+# --- Auto-download Josefin Sans if missing ---
+async def ensure_josefin_font():
+    if not os.path.exists(PRIMARY_FONT):
+        os.makedirs(PRIMARY_FONT_DIR, exist_ok=True)
+        url = "https://github.com/google/fonts/raw/main/ofl/josefinsans/JosefinSans-Regular.ttf"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        async with aiofiles.open(PRIMARY_FONT, "wb") as f:
+                            await f.write(await resp.read())
+        except Exception:
+            pass
 
 
 # --- Font loader ---
-def load_font(size: int):
-    try:
-        return ImageFont.truetype(MAIN_FONT, size)
-    except Exception:
-        return ImageFont.truetype(FALLBACK_FONT, size)
+def load_font(path: str, size: int):
+    for p in (PRIMARY_FONT, path, FALLBACK_FONT):
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
 
 # --- Dominant color + brightness ---
@@ -72,8 +90,17 @@ async def blur_image(img, radius):
     return await asyncio.to_thread(img.filter, ImageFilter.GaussianBlur(radius))
 
 
+# --- Truncate title if too long ---
+def truncate_title(text, max_words=25, max_chars=120):
+    words = text.split()
+    if len(words) > max_words or len(text) > max_chars:
+        text = " ".join(words[:max_words])[:max_chars].rstrip() + "…"
+    return text
+
+
 # --- Main thumbnail generator ---
 async def get_thumb(videoid: str) -> str:
+    await ensure_josefin_font()
     cache_path = os.path.join(CACHE_DIR, f"{videoid}_cinematic_final.png")
     if os.path.exists(cache_path):
         return cache_path
@@ -82,7 +109,7 @@ async def get_thumb(videoid: str) -> str:
     try:
         results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
         data = (await results.next())["result"][0]
-        title = data.get("title", "Unknown Title")
+        title = truncate_title(data.get("title", "Unknown Title"))
         thumbnail = data.get("thumbnails", [{}])[0].get("url", FAILED)
         channel = data.get("channel", {}).get("name", "Unknown Channel")
         views = data.get("viewCount", {}).get("short", "Unknown Views")
@@ -112,12 +139,12 @@ async def get_thumb(videoid: str) -> str:
     # --- Base image ---
     base = Image.open(thumb_path).convert("RGBA").resize((1280, 720))
     dom_color, tone = get_dominant_color_and_brightness(base)
-    text_color = "#E6E6E6"
-    meta_color = "#B0B0B0"
+    text_color = "white" if tone == "dark" else "#222222"
+    meta_color = "#DDDDDD" if tone == "dark" else "#333333"
 
-    # --- Background blur & deeper overlay ---
+    # --- Background blur & gradient ---
     bg = await blur_image(base, 25)
-    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 210))
+    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180 if tone == "dark" else 100))
     bg = Image.alpha_composite(bg, dark_overlay)
 
     # Gradient overlay
@@ -125,31 +152,34 @@ async def get_thumb(videoid: str) -> str:
     for y in range(720):
         gradient.putpixel((0, y), int(255 * (y / 720)))
     alpha = gradient.resize(bg.size)
-    black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 160))
+    black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 120))
     bg = Image.composite(black_grad, bg, alpha)
 
     draw = ImageDraw.Draw(bg)
 
     # --- Fonts ---
-    title_font = load_font(34)
-    meta_font = load_font(24)
-    time_font = load_font(22)
+    title_font = load_font("", 30)
+    meta_font = load_font("", 24)
+    time_font = load_font("", 22)
 
     # --- Left thumbnail ---
     thumb_w, thumb_h = 500, 280
     thumb_x, thumb_y = 90, (720 - thumb_h) // 2
     thumb = base.resize((thumb_w, thumb_h))
 
-    # Shadow for thumb
-    shadow = Image.new("RGBA", (thumb_w + 20, thumb_h + 20), (0, 0, 0, 0))
+    # --- Shadow fix ---
+    shadow_pad = 20
+    shadow = Image.new("RGBA", (thumb_w + shadow_pad, thumb_h + shadow_pad), (0, 0, 0, 0))
     sdraw = ImageDraw.Draw(shadow)
     sdraw.rounded_rectangle(
-        (10, 10, thumb_w + 10, thumb_h + 10), radius=25, fill=(0, 0, 0, 120)
+        (shadow_pad//2, shadow_pad//2, thumb_w + shadow_pad//2, thumb_h + shadow_pad//2),
+        radius=30,
+        fill=(0, 0, 0, 140),
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(15))
-    bg.paste(shadow, (thumb_x - 10, thumb_y - 10), shadow)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(12))
+    bg.paste(shadow, (thumb_x - shadow_pad//2, thumb_y - shadow_pad//2), shadow)
 
-    # Rounded mask for thumbnail
+    # Rounded thumbnail
     mask = Image.new("L", (thumb_w, thumb_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, thumb_w, thumb_h), 25, fill=255)
     bg.paste(thumb, (thumb_x, thumb_y), mask)
@@ -161,7 +191,7 @@ async def get_thumb(videoid: str) -> str:
 
     wrapped_title = wrap_text(title, title_font, text_max_w, max_lines=2)
     title_heights = []
-    for i, line in enumerate(wrapped_title):
+    for line in wrapped_title:
         _, _, _, h = draw.textbbox((0, 0), line, font=title_font)
         draw_text_with_shadow(draw, (text_x, title_y + sum(title_heights)), line, title_font, text_color)
         title_heights.append(h + 5)
@@ -169,32 +199,31 @@ async def get_thumb(videoid: str) -> str:
 
     meta_y = title_y + title_block_height + 5
     meta_text = f"{channel} • {views}"
-    meta_lines = wrap_text(meta_text, meta_font, text_max_w, max_lines=1)
-    draw_text_with_shadow(draw, (text_x, meta_y), meta_lines[0], meta_font, meta_color)
+    draw_text_with_shadow(draw, (text_x, meta_y), meta_text, meta_font, meta_color)
 
-    # --- Progress bar ---
+    # --- Progress bar (drawn last so not hidden) ---
     bar_start = text_x
     bar_y = meta_y + 80
     total_len = 550
     prog_len = int(total_len * 0.35)
 
-    # Glow layer (darker)
+    # Glow
     glow = Image.new("RGBA", bg.size, (0, 0, 0, 0))
     gdraw = ImageDraw.Draw(glow)
-    glow_col = tuple(int(c * 0.8) for c in dom_color)
-    gdraw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=glow_col, width=30)
+    gdraw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=30)
     glow = glow.filter(ImageFilter.GaussianBlur(15))
     bg = Image.alpha_composite(bg, glow)
 
     # Actual bar
+    draw = ImageDraw.Draw(bg)
     draw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=8)
-    draw.line([(bar_start + prog_len, bar_y), (bar_start + total_len, bar_y)], fill="#333333", width=6)
+    draw.line([(bar_start + prog_len, bar_y), (bar_start + total_len, bar_y)], fill="#555555", width=6)
     draw.ellipse(
         [(bar_start + prog_len - 10, bar_y - 10), (bar_start + prog_len + 10, bar_y + 10)],
         fill=dom_color,
     )
 
-    # --- Time text ---
+    # Time text
     draw_text_with_shadow(draw, (bar_start, bar_y + 15), "00:00", time_font, fill=meta_color)
     end_text = "LIVE" if is_live else duration
     end_fill = "red" if is_live else meta_color
@@ -206,7 +235,7 @@ async def get_thumb(videoid: str) -> str:
         fill=end_fill,
     )
 
-    # --- Save ---
+    # --- Save final ---
     bg.save(cache_path)
     try:
         os.remove(thumb_path)
