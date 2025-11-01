@@ -101,7 +101,7 @@ def wrap_text_multilingual(text, font, max_width, max_lines=2, draw=None):
     joined = "".join(lines)
     if len(joined) < len(text):
         last = lines[-1]
-        ellipsis = "..."
+        ellipsis = "."
         while True:
             candidate = last + ellipsis
             cbox = draw.textbbox((0, 0), candidate, font=font)
@@ -135,7 +135,7 @@ def truncate_title(text, max_words=25, max_chars=120, hard_char_limit=25):
     if len(words) > max_words or len(text) > max_chars:
         text = " ".join(words[:max_words])[:max_chars].rstrip()
     if len(text) > hard_char_limit:
-        text = text[:hard_char_limit].rstrip() + "..."
+        text = text[:hard_char_limit].rstrip() + ".."
     return text
 
 
@@ -148,7 +148,7 @@ def choose_title_font(text, font_path_hint, max_width, max_lines=2):
         lines = wrap_text_multilingual(text, f, max_width, max_lines=max_lines, draw=d)
         if len(lines) <= max_lines:
             return f
-    return load_font(font_path_hint, 24)
+    return load_font(font_path_hint, 26)
 
 
 # --- Main thumbnail generator ---
