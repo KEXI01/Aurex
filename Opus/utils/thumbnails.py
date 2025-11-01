@@ -6,8 +6,7 @@ from functools import partial
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from youtubesearchpython.__future__ import VideosSearch
 from collections import Counter
-from Opus import app
-from config import FAILED
+from config import FAILED 
 
 # --- Constants ---
 CACHE_DIR = "cache"
@@ -15,6 +14,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 PRIMARY_FONT_DIR = "/usr/share/fonts/truetype/josefinsans"
 PRIMARY_FONT = os.path.join(PRIMARY_FONT_DIR, "JosefinSans-Regular.ttf")
+
 
 # --- Auto-download Josefin Sans if missing ---
 async def ensure_josefin_font():
@@ -28,13 +28,13 @@ async def ensure_josefin_font():
                         async with aiofiles.open(PRIMARY_FONT, "wb") as f:
                             await f.write(await resp.read())
         except Exception:
-            pass
+            pass  # fallback to DejaVu
 
 
 # --- Font loader ---
 def load_font(path: str, size: int):
     for p in (PRIMARY_FONT, path, FALLBACK_FONT):
-        if os.path.exists(p):
+        if p and os.path.exists(p):
             try:
                 return ImageFont.truetype(p, size)
             except Exception:
@@ -59,29 +59,68 @@ def get_dominant_color_and_brightness(img: Image.Image):
 
 
 # --- Multilingual-safe wrapping ---
-def wrap_text(text, font, max_width, max_lines=2):
-    lines, current = [], ""
-    for ch in text:
-        if font.getlength(current + ch) <= max_width:
-            current += ch
-        else:
+def wrap_text_multilingual(text, font, max_width, max_lines=2, draw=None):
+    if draw is None:
+        temp = Image.new("RGBA", (10, 10))
+        draw = ImageDraw.Draw(temp)
+
+    use_word_split = " " in text.strip()
+    lines = []
+
+    if use_word_split:
+        words = text.split()
+        current = ""
+        for w in words:
+            candidate = (current + " " + w).strip() if current else w
+            wbox = draw.textbbox((0, 0), candidate, font=font)
+            if wbox[2] - wbox[0] <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = w
+            if len(lines) >= max_lines:
+                break
+        if current and len(lines) < max_lines:
             lines.append(current)
-            current = ch
-        if len(lines) >= max_lines:
-            break
-    if current and len(lines) < max_lines:
-        lines.append(current)
+    else:
+        current = ""
+        for ch in text:
+            candidate = current + ch
+            cbox = draw.textbbox((0, 0), candidate, font=font)
+            if cbox[2] - cbox[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = ch
+            if len(lines) >= max_lines:
+                break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+
     joined = "".join(lines)
     if len(joined) < len(text):
-        lines[-1] = lines[-1].rstrip() + "…"
+        last = lines[-1]
+        ellipsis = "…"
+        while True:
+            candidate = last + ellipsis
+            cbox = draw.textbbox((0, 0), candidate, font=font)
+            if cbox[2] - cbox[0] <= max_width or len(last) == 0:
+                lines[-1] = candidate
+                break
+            last = last[:-1]
+
     return lines[:max_lines]
 
 
 # --- Text with soft shadow ---
 def draw_text_with_shadow(draw, pos, text, font, fill):
     x, y = pos
-    shadow_fill = "black" if fill != "black" else "#CCCCCC"
-    draw.text((x + 2, y + 2), text, font=font, fill=shadow_fill)
+    try:
+        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, 200))
+    except Exception:
+        shadow_fill = "black" if fill != "black" else "#CCCCCC"
+        draw.text((x + 2, y + 2), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
 
 
@@ -91,25 +130,42 @@ async def blur_image(img, radius):
 
 
 # --- Truncate title if too long ---
-def truncate_title(text, max_words=25, max_chars=120):
+def truncate_title(text, max_words=25, max_chars=120, hard_char_limit=25):
     words = text.split()
     if len(words) > max_words or len(text) > max_chars:
-        text = " ".join(words[:max_words])[:max_chars].rstrip() + "…"
+        text = " ".join(words[:max_words])[:max_chars].rstrip()
+    if len(text) > hard_char_limit:
+        text = text[:hard_char_limit].rstrip() + "…"
     return text
+
+
+# --- Choose adaptive title font size ---
+def choose_title_font(text, font_path_hint, max_width, max_lines=2):
+    for size in (48, 44, 40, 36, 32, 30, 28, 26, 24):
+        f = load_font(font_path_hint, size)
+        temp = Image.new("RGBA", (10, 10))
+        d = ImageDraw.Draw(temp)
+        lines = wrap_text_multilingual(text, f, max_width, max_lines=max_lines, draw=d)
+        if len(lines) <= max_lines:
+            return f
+    return load_font(font_path_hint, 24)
 
 
 # --- Main thumbnail generator ---
 async def get_thumb(videoid: str) -> str:
     await ensure_josefin_font()
+
     cache_path = os.path.join(CACHE_DIR, f"{videoid}_cinematic_final.png")
     if os.path.exists(cache_path):
         return cache_path
 
     # --- Fetch video info ---
     try:
-        results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
-        data = (await results.next())["result"][0]
-        title = truncate_title(data.get("title", "Unknown Title"))
+        search = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
+        result = await search.next()
+        data = result["result"][0]
+        title = data.get("title", "Unknown Title")
+        title = truncate_title(title)
         thumbnail = data.get("thumbnails", [{}])[0].get("url", FAILED)
         channel = data.get("channel", {}).get("name", "Unknown Channel")
         views = data.get("viewCount", {}).get("short", "Unknown Views")
@@ -123,7 +179,7 @@ async def get_thumb(videoid: str) -> str:
             "Live",
         )
 
-    is_live = duration.lower() in {"live", "live now", ""}
+    is_live = str(duration).lower() in {"live", "live now", ""}
 
     # --- Download thumbnail ---
     thumb_path = os.path.join(CACHE_DIR, f"thumb_{videoid}.png")
@@ -133,11 +189,17 @@ async def get_thumb(videoid: str) -> str:
                 if resp.status == 200:
                     async with aiofiles.open(thumb_path, "wb") as f:
                         await f.write(await resp.read())
+                else:
+                    return FAILED
     except Exception:
         return FAILED
 
     # --- Base image ---
-    base = Image.open(thumb_path).convert("RGBA").resize((1280, 720))
+    try:
+        base = Image.open(thumb_path).convert("RGBA").resize((1280, 720))
+    except Exception:
+        return FAILED
+
     dom_color, tone = get_dominant_color_and_brightness(base)
     text_color = "white" if tone == "dark" else "#222222"
     meta_color = "#DDDDDD" if tone == "dark" else "#333333"
@@ -145,12 +207,13 @@ async def get_thumb(videoid: str) -> str:
     # --- Background blur & gradient ---
     bg = await blur_image(base, 25)
     dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180 if tone == "dark" else 100))
-    bg = Image.alpha_composite(bg, dark_overlay)
+    bg = Image from alpha_composite(bg, dark_overlay)
 
     # Gradient overlay
     gradient = Image.new("L", (1, 720))
+    draw_grad = ImageDraw.Draw(gradient)
     for y in range(720):
-        gradient.putpixel((0, y), int(255 * (y / 720)))
+        draw_grad.point((0, y), int(255 * (1 - y / 720)))  # Top dark → bottom light
     alpha = gradient.resize(bg.size)
     black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 120))
     bg = Image.composite(black_grad, bg, alpha)
@@ -158,7 +221,9 @@ async def get_thumb(videoid: str) -> str:
     draw = ImageDraw.Draw(bg)
 
     # --- Fonts ---
-    title_font = load_font("", 30)
+    text_x = 90 + 500 + 60
+    text_max_w = 640
+    title_font = choose_title_font(title, "", text_max_w, max_lines=2)
     meta_font = load_font("", 24)
     time_font = load_font("", 22)
 
@@ -167,45 +232,45 @@ async def get_thumb(videoid: str) -> str:
     thumb_x, thumb_y = 90, (720 - thumb_h) // 2
     thumb = base.resize((thumb_w, thumb_h))
 
-    # --- Shadow fix ---
+    # --- Shadow ---
     shadow_pad = 20
     shadow = Image.new("RGBA", (thumb_w + shadow_pad, thumb_h + shadow_pad), (0, 0, 0, 0))
     sdraw = ImageDraw.Draw(shadow)
     sdraw.rounded_rectangle(
-        (shadow_pad//2, shadow_pad//2, thumb_w + shadow_pad//2, thumb_h + shadow_pad//2),
+        (shadow_pad // 2, shadow_pad // 2, thumb_w + shadow_pad // 2, thumb_h + shadow_pad // 2),
         radius=30,
         fill=(0, 0, 0, 140),
     )
     shadow = shadow.filter(ImageFilter.GaussianBlur(12))
-    bg.paste(shadow, (thumb_x - shadow_pad//2, thumb_y - shadow_pad//2), shadow)
+    bg.paste(shadow, (thumb_x - shadow_pad // 2, thumb_y - shadow_pad // 2), shadow)
 
-    # Rounded thumbnail
+    # --- Rounded thumbnail ---
     mask = Image.new("L", (thumb_w, thumb_h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, thumb_w, thumb_h), 25, fill=255)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle((0, 0, thumb_w, thumb_h), radius=25, fill=255)
     bg.paste(thumb, (thumb_x, thumb_y), mask)
 
     # --- Text placement ---
-    text_x = thumb_x + thumb_w + 60
-    text_max_w = 640
     title_y = thumb_y + 5
-
-    wrapped_title = wrap_text(title, title_font, text_max_w, max_lines=2)
+    wrapped_title = wrap_text_multilingual(title, title_font, text_max_w, max_lines=2, draw=draw)
     title_heights = []
     for line in wrapped_title:
-        _, _, _, h = draw.textbbox((0, 0), line, font=title_font)
+        bbox = draw.textbbox((0, 0), line, font=title_font)
+        h = bbox[3] - bbox[1]
         draw_text_with_shadow(draw, (text_x, title_y + sum(title_heights)), line, title_font, text_color)
-        title_heights.append(h + 5)
+        title_heights.append(h + 6)
     title_block_height = sum(title_heights)
 
     meta_y = title_y + title_block_height + 5
     meta_text = f"{channel} • {views}"
     draw_text_with_shadow(draw, (text_x, meta_y), meta_text, meta_font, meta_color)
 
-    # --- Progress bar (drawn last so not hidden) ---
+    # --- Progress bar ---
     bar_start = text_x
     bar_y = meta_y + 80
     total_len = 550
-    prog_len = int(total_len * 0.35)
+    prog_fraction = 0.35  # Replace with real progress if available
+    prog_len = int(total_len * prog_fraction)
 
     # Glow
     glow = Image.new("RGBA", bg.size, (0, 0, 0, 0))
@@ -224,19 +289,21 @@ async def get_thumb(videoid: str) -> str:
     )
 
     # Time text
-    draw_text_with_shadow(draw, (bar_start, bar_y + 15), "00:00", time_font, fill=meta_color)
+    current_time_text = f"00:{int(prog_fraction * 100):02d}"
+    draw_text_with_shadow(draw, (bar_start, bar_y + 15), current_time_text, time_font, meta_color)
     end_text = "LIVE" if is_live else duration
     end_fill = "red" if is_live else meta_color
+    end_width = draw.textbbox((0, 0), end_text, font=time_font)[2]
     draw_text_with_shadow(
         draw,
-        (bar_start + total_len - (90 if is_live else 60), bar_y + 15),
+        (bar_start + total_len - end_width, bar_y + 15),
         end_text,
         time_font,
-        fill=end_fill,
+        end_fill,
     )
 
     # --- Save final ---
-    bg.save(cache_path)
+    bg.save(cache_path, "PNG")
     try:
         os.remove(thumb_path)
     except OSError:
