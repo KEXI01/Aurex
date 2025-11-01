@@ -4,72 +4,80 @@ import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from youtubesearchpython.__future__ import VideosSearch
-from Opus import app 
+from Opus import app
 from config import FAILED
 
-# Constants
+# --- Constants ---
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-PANEL_W, PANEL_H = 763, 545
-PANEL_X = (1280 - PANEL_W) // 2
-PANEL_Y = 88
-TRANSPARENCY = 170
-INNER_OFFSET = 36
+FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-THUMB_W, THUMB_H = 542, 273
-THUMB_X = PANEL_X + (PANEL_W - THUMB_W) // 2
-THUMB_Y = PANEL_Y + INNER_OFFSET
+# --- Font loader ---
+def load_font(path: str, size: int):
+    """Safely load font with fallback for multilingual titles."""
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
+        return ImageFont.truetype(FALLBACK_FONT, size)
 
-TITLE_X = 377
-META_X = 377
-TITLE_Y = THUMB_Y + THUMB_H + 10
-META_Y = TITLE_Y + 45
 
-BAR_X, BAR_Y = 388, META_Y + 45
-BAR_RED_LEN = 280
-BAR_TOTAL_LEN = 480
+# --- Title wrapping ---
+def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, max_lines: int = 2):
+    """
+    Automatically wrap text to fit within given width.
+    Ensures max two lines (for multilingual / long titles).
+    """
+    words = text.split()
+    lines, current_line = [], ""
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        if font.getlength(test_line) <= max_width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+        if len(lines) >= max_lines:
+            break
+    if current_line and len(lines) < max_lines:
+        lines.append(current_line)
+    # Add ellipsis if truncated
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+    elif len(words) > 1 and len(lines) == max_lines and " ".join(words) != " ".join(lines):
+        lines[-1] += "…"
+    return lines[:max_lines]
 
-ICONS_W, ICONS_H = 415, 45
-ICONS_X = PANEL_X + (PANEL_W - ICONS_W) // 2
-ICONS_Y = BAR_Y + 48
 
-MAX_TITLE_WIDTH = 580
-
-def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
-    ellipsis = "…"
-    if font.getlength(text) <= max_w:
-        return text
-    for i in range(len(text) - 1, 0, -1):
-        if font.getlength(text[:i] + ellipsis) <= max_w:
-            return text[:i] + ellipsis
-    return ellipsis
-
+# --- Main async thumbnail generator ---
 async def get_thumb(videoid: str) -> str:
-    cache_path = os.path.join(CACHE_DIR, f"{videoid}_v4.png")
+    """
+    Generate a cinematic, multilingual thumbnail image (1280x720) for YouTube videos.
+    Features:
+      - Full blurred background + gradient overlay
+      - Left thumbnail with rounded corners and shadow
+      - Right side text area (auto-wrapped title + channel info)
+      - Progress bar, time display, soft outer shadow
+    """
+    cache_path = os.path.join(CACHE_DIR, f"{videoid}_cinematic_v6.png")
     if os.path.exists(cache_path):
         return cache_path
 
-    # YouTube video data fetch
-    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
+    # --- Fetch YouTube data ---
     try:
-        results_data = await results.next()
-        result_items = results_data.get("result", [])
-        if not result_items:
-            raise ValueError("No results found.")
-        data = result_items[0]
-        title = re.sub(r"\W+", " ", data.get("title", "Unsupported Title")).title()
+        results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
+        data = (await results.next())["result"][0]
+        title = data.get("title", "Unknown Title")
         thumbnail = data.get("thumbnails", [{}])[0].get("url", FAILED)
-        duration = data.get("duration")
         views = data.get("viewCount", {}).get("short", "Unknown Views")
+        duration = data.get("duration", "Live")
     except Exception:
-        title, thumbnail, duration, views = "Unsupported Title", FAILED, None, "Unknown Views"
+        title, thumbnail, views, duration = "Unsupported Title", FAILED, "Unknown Views", "Live"
 
-    is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
-    duration_text = "Live" if is_live else duration or "Unknown Mins"
+    is_live = duration.lower() in {"live", "live now", ""}
 
-    # Download thumbnail
-    thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
+    # --- Download thumbnail ---
+    thumb_path = os.path.join(CACHE_DIR, f"thumb_{videoid}.png")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(thumbnail) as resp:
@@ -79,56 +87,95 @@ async def get_thumb(videoid: str) -> str:
     except Exception:
         return FAILED
 
-    # Create base image
+    # --- Base and background setup ---
     base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
-    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(10))).enhance(0.6)
+    bg = base.filter(ImageFilter.GaussianBlur(25))
+    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180))
+    bg = Image.alpha_composite(bg, dark_overlay)
 
-    # Frosted glass panel
-    panel_area = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
-    overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
-    frosted = Image.alpha_composite(panel_area, overlay)
-    mask = Image.new("L", (PANEL_W, PANEL_H), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), 50, fill=255)
-    bg.paste(frosted, (PANEL_X, PANEL_Y), mask)
+    # --- Outer card shadow ---
+    shadow_size = (1280 + 40, 720 + 40)
+    outer_shadow = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
+    draw_shadow = ImageDraw.Draw(outer_shadow)
+    draw_shadow.rounded_rectangle(
+        (20, 20, 1260 + 20, 700 + 20),
+        radius=40,
+        fill=(0, 0, 0, 120),
+    )
+    outer_shadow = outer_shadow.filter(ImageFilter.GaussianBlur(25))
+    full = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
+    full.paste(outer_shadow, (0, 0))
+    full.paste(bg, (20, 20), bg)
+    bg = full.crop((0, 0, 1280, 720))
 
-    # Draw details
     draw = ImageDraw.Draw(bg)
-    try:
-        title_font = ImageFont.truetype("src/assets/font2.ttf", 32)
-        regular_font = ImageFont.truetype("src/assets/font.ttf", 18)
-    except OSError:
-        title_font = regular_font = ImageFont.load_default()
 
-    thumb = base.resize((THUMB_W, THUMB_H))
-    tmask = Image.new("L", thumb.size, 0)
-    ImageDraw.Draw(tmask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 20, fill=255)
-    bg.paste(thumb, (THUMB_X, THUMB_Y), tmask)
+    # --- Fonts ---
+    title_font = load_font("src/assets/font2.ttf", 40)
+    meta_font = load_font("src/assets/font.ttf", 24)
+    time_font = load_font("src/assets/font.ttf", 22)
 
-    draw.text((TITLE_X, TITLE_Y), trim_to_width(title, title_font, MAX_TITLE_WIDTH), fill="black", font=title_font)
-    draw.text((META_X, META_Y), f"YouTube | {views}", fill="black", font=regular_font)
+    # --- Left thumbnail ---
+    thumb_w, thumb_h = 500, 280
+    thumb_x, thumb_y = 90, (720 - thumb_h) // 2
+    thumb = base.resize((thumb_w, thumb_h))
 
-    # Progress bar
-    draw.line([(BAR_X, BAR_Y), (BAR_X + BAR_RED_LEN, BAR_Y)], fill="red", width=6)
-    draw.line([(BAR_X + BAR_RED_LEN, BAR_Y), (BAR_X + BAR_TOTAL_LEN, BAR_Y)], fill="gray", width=5)
-    draw.ellipse([(BAR_X + BAR_RED_LEN - 7, BAR_Y - 7), (BAR_X + BAR_RED_LEN + 7, BAR_Y + 7)], fill="red")
+    # Shadow for thumb
+    shadow = Image.new("RGBA", (thumb_w + 20, thumb_h + 20), (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.rounded_rectangle(
+        (10, 10, thumb_w + 10, thumb_h + 10), radius=25, fill=(0, 0, 0, 120)
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(17))
+    bg.paste(shadow, (thumb_x - 10, thumb_y - 10), shadow)
 
-    draw.text((BAR_X, BAR_Y + 15), "00:00", fill="black", font=regular_font)
-    end_text = "Live" if is_live else duration_text
-    draw.text((BAR_X + BAR_TOTAL_LEN - (90 if is_live else 60), BAR_Y + 15), end_text, fill="red" if is_live else "black", font=regular_font)
+    # Masked thumb
+    mask = Image.new("L", (thumb_w, thumb_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, thumb_w, thumb_h), 25, fill=255)
+    bg.paste(thumb, (thumb_x, thumb_y), mask)
 
-    # Icons
-    icons_path = "src/assets/play_icons.png"
-    if os.path.isfile(icons_path):
-        ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
-        r, g, b, a = ic.split()
-        black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
-        bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
+    # --- Text on right ---
+    text_x = thumb_x + thumb_w + 60
+    text_max_w = 640
+    title_y = thumb_y + 10
+    meta_y = title_y + 95
 
-    # Cleanup and save
+    # Auto-wrap title (supports all languages)
+    wrapped_lines = wrap_text(title, title_font, text_max_w, max_lines=2)
+    for i, line in enumerate(wrapped_lines):
+        draw.text((text_x, title_y + i * 45), line, fill="white", font=title_font)
+
+    # Channel/meta info
+    draw.text((text_x, meta_y), f"YouTube • {views}", fill="#DDDDDD", font=meta_font)
+
+    # --- Progress bar ---
+    bar_start = text_x
+    bar_y = meta_y + 70
+    total_len = 550
+    red_len = 220
+    draw.line([(bar_start, bar_y), (bar_start + red_len, bar_y)], fill="red", width=8)
+    draw.line([(bar_start + red_len, bar_y), (bar_start + total_len, bar_y)], fill="#555555", width=6)
+    draw.ellipse(
+        [(bar_start + red_len - 10, bar_y - 10), (bar_start + red_len + 10, bar_y + 10)],
+        fill="red",
+    )
+
+    # --- Time text ---
+    draw.text((bar_start, bar_y + 15), "00:10", fill="#CCCCCC", font=time_font)
+    end_text = "LIVE" if is_live else duration
+    end_fill = "red" if is_live else "#CCCCCC"
+    draw.text(
+        (bar_start + total_len - (90 if is_live else 60), bar_y + 15),
+        end_text,
+        fill=end_fill,
+        font=time_font,
+    )
+
+    # --- Save final ---
+    bg.save(cache_path)
     try:
         os.remove(thumb_path)
     except OSError:
         pass
 
-    bg.save(cache_path)
     return cache_path
