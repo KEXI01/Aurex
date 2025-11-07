@@ -1,4 +1,4 @@
-<h1 align="center">🎶 Aurex — Asynced + Uvlooped Kurigram Music Bot</h1>
+<h1 align="center">🎶 Opus — Asynced + Uvlooped Kurigram Music Bot</h1>
 
 <p align="center">
   <a href="https://github.com/KEXI01/Aurex/stargazers"><img src="https://img.shields.io/github/stars/KEXI01/Aurex?style=for-the-badge&color=yellow" /></a>
