@@ -12,6 +12,7 @@ pillow
 psutil
 py-tgcalls==1.2.9
 ntgcalls==1.1.2
+numpy
 Flask
 gunicorn
 kurigram==2.2.13
