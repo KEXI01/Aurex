@@ -10,7 +10,10 @@ from config import FAILED
 APPLE_TEMPLATE_PATH = "Opus/assets/apple_music.png"
 
 def _resample_lanczos():
-    return Image.Resampling.LANCZOS
+    try:
+        return Image.Resampling.LANCZOS
+    except AttributeError:
+        return Image.ANTIALIAS
 
 def safe_font(path, size):
     try:
@@ -36,11 +39,14 @@ def _detect_panel_bounds(img_rgba):
     W, H = img_rgba.size
     gray = img_rgba.convert("L")
     arr = np.array(gray)
+
     thr = int(np.percentile(arr, 90))
     mask = (arr >= thr).astype(np.uint8)
+
     y0 = int(H * 0.25)
     y1 = int(H * 0.75)
     band = mask[y0:y1, :]
+
     visited = np.zeros_like(band, dtype=np.uint8)
     best = None
     h, w = band.shape
@@ -95,10 +101,13 @@ def _detect_left_card_bounds(img_rgba):
     W, H = img_rgba.size
     gray = img_rgba.convert("L")
     arr = np.array(gray)
+
     x_band = int(W * 0.28)
     sub = arr[:, :x_band]
+
     thr = int(np.percentile(sub, 88))
     mask = (sub >= thr).astype(np.uint8)
+
     visited = np.zeros_like(mask, dtype=np.uint8)
     best = None
     h, w = mask.shape
@@ -115,15 +124,15 @@ def _detect_left_card_bounds(img_rgba):
                 stack = [(r, c)]
                 visited[r, c] = 1
                 min_r = max_r = r
-                min_c = max_c = c  # Fixed: was 'c' instead of 'cc'
+                min_c = max_c = c
                 area = 0
                 while stack:
                     rr, cc = stack.pop()
                     area += 1
                     min_r = min(min_r, rr)
                     max_r = max(max_r, rr)
-                    min_c = min(min_c, cc)  # Fixed
-                    max_c = max(max_c, cc)  # Fixed
+                    min_c = min(min_c, c)
+                    max_c = max(max_c, c)
                     for nr, nc in neighbors(rr, cc):
                         if mask[nr, nc] and not visited[nr, nc]:
                             visited[nr, nc] = 1
@@ -153,27 +162,37 @@ async def get_thumb(videoid):
         return final_path
 
     url = f"https://www.youtube.com/watch?v={videoid}"
+
     try:
         search = VideosSearch(url, limit=1)
-        results = await search.next()
+        try:
+            results = await search.next()
+        except TypeError:
+            results = search.result()
         if not results or "result" not in results or not results["result"]:
             return FAILED
+
         r0 = results["result"][0]
         title = re.sub(r"\s+", " ", r0.get("title", "Unknown Title")).strip()
-        channel = r0.get("channel", {}).get("name", "YouTube") if isinstance(r0.get("channel"), dict) else "YouTube"
+        channel = r0.get("channel", {})
+        if isinstance(channel, dict):
+            channel = channel.get("name", "Youtube")
+        elif not channel:
+            channel = "Youtube"
 
         thumb_field = r0.get("thumbnails") or r0.get("thumbnail") or []
-        thumbnail_url = ""
-        if isinstance(thumb_field, list) and thumb_field:
-            thumbnail_url = thumb_field[0].get("url", "").split("?")[0]
+        if isinstance(thumb_field, list) and thumb_field and isinstance(thumb_field[0], dict):
+            thumbnail_url = (thumb_field[0].get("url") or "").split("?")[0]
         elif isinstance(thumb_field, dict):
-            thumbnail_url = thumb_field.get("url", "").split("?")[0]
-
+            thumbnail_url = (thumb_field.get("url") or "").split("?")[0]
+        else:
+            thumbnail_url = str(thumb_field).split("?")[0] if thumb_field else ""
         if not thumbnail_url:
             return FAILED
 
         os.makedirs("cache", exist_ok=True)
         raw_path = f"cache/raw_{videoid}.jpg"
+
         async with aiohttp.ClientSession() as session:
             async with session.get(thumbnail_url) as resp:
                 if resp.status != 200:
@@ -188,125 +207,115 @@ async def get_thumb(videoid):
         W, H = base.size
         draw = ImageDraw.Draw(base)
 
-        # Detect regions
         panel_x0, panel_x1, panel_y0, panel_y1 = _detect_panel_bounds(base)
         lx0, lx1, ly0, ly1 = _detect_left_card_bounds(base)
+        left_card_h = (ly1 - ly0 + 1)
 
-        left_card_h = ly1 - ly0 + 1
-        GAP = 12
-        RADIUS = max(16, left_card_h // 7)  # Slightly larger, matches Apple
-        album_h = int(left_card_h * 1.15)
+        GAP = 8
+        RADIUS = max(12, left_card_h // 8)
+        album_h = int(left_card_h * 1.10)
         album_w = album_h
-        album_x = lx0 - 8
-        album_y = ly0 - int((album_h - left_card_h) / 2)
-        album_x = max(4, min(album_x, W - album_w - 4))
-        album_y = max(4, min(album_y, H - album_h - 4))
 
-        # Load and enhance cover
+        album_x = lx0 - 7
+        album_y = ly0 - int((album_h - left_card_h) / 2)
+        album_x = max(2, min(album_x, W - album_w - 2))
+        album_y = max(2, min(album_y, H - album_h - 2))
+
         src = Image.open(raw_path).convert("RGBA")
-        src = ImageEnhance.Color(src).enhance(1.8)  # Slightly less aggressive
+        src = ImageEnhance.Color(src).enhance(2.0)
         cover = ImageOps.fit(src, (album_w, album_h), method=_resample_lanczos(), centering=(0.5, 0.5))
 
-        # Rounded mask
         mask = Image.new("L", (album_w, album_h), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.rounded_rectangle((0, 0, album_w, album_h), radius=RADIUS, fill=255)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, album_w, album_h), radius=RADIUS, fill=255)
         cover.putalpha(mask)
 
-        # Improved shadow
-        shadow_size = 48
-        shadow = Image.new("RGBA", (album_w + shadow_size, album_h + shadow_size), (0, 0, 0, 0))
-        shadow_mask = Image.new("L", (album_w + shadow_size, album_h + shadow_size), 0)
-        sm_draw = ImageDraw.Draw(shadow_mask)
-        sm_draw.rounded_rectangle(
-            (shadow_size//2, shadow_size//2, album_w + shadow_size//2, album_h + shadow_size//2),
+        shadow = Image.new("RGBA", (album_w + 40, album_h + 40), (0, 0, 0, 0))
+        shadow_mask = Image.new("L", (album_w + 40, album_h + 40), 0)
+        draw_mask = ImageDraw.Draw(shadow_mask)
+        draw_mask.rounded_rectangle(
+            (20, 20, album_w + 20, album_h + 20),
             radius=RADIUS,
-            fill=160
+            fill=180
         )
-        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(14))
+        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(10))
         shadow.putalpha(shadow_mask)
-        base.paste(shadow, (album_x - shadow_size//2, album_y - shadow_size//2), shadow)
+        base.paste(shadow, (album_x - 20, album_y - 20), shadow)
 
-        # Paste cover
         base.paste(cover, (album_x, album_y), cover)
 
-        # Colors
-        palette = _most_common_colors(cover, n=1)
-        primary_color = palette[0]
-        fg = get_contrasting_color(primary_color)
-        muted = (140, 140, 140)
+        palette = _most_common_colors(cover)
+        fg = (0, 0, 0)
+        muted = (120, 120, 120)
 
-        # Fonts
         title_font_path = "Opus/assets/font.ttf"
-        artist_font = safe_font("Opus/assets/font2.ttf", 26)
-        title_start_size = 40
+        meta_font = safe_font("Opus/assets/font2.ttf", 22)
+        small_font = safe_font("Opus/assets/font.ttf", 22)
 
-        # Text layout
-        INNER_PAD = 40
+        INNER_PAD = 36
         text_x = max(panel_x0 + INNER_PAD, album_x + album_w + GAP)
         text_right = panel_x1 - INNER_PAD
         text_w = max(1, text_right - text_x)
-        text_top = panel_y0 + 38
+        text_top = panel_y0 + 40
 
-        # Title
-        def shrink_to_fit(s, start, min_size, max_w):
-            size = start
-            while size >= min_size:
+        def shrink_to_fit_one_line(s, start_px, min_px, max_w):
+            size = start_px
+            while size >= min_px:
                 f = safe_font(title_font_path, size)
                 w = draw.textbbox((0, 0), s, font=f)[2]
                 if w <= max_w:
                     return f
                 size -= 1
-            return safe_font(title_font_path, min_size)
+            return safe_font(title_font_path, min_px)
 
-        title_font = shrink_to_fit(title, title_start_size, 26, text_w)
-        title_draw = title
-        if draw.textbbox((0, 0), title_draw, font=title_font)[2] > text_w:
-            # Ellipsize
-            lo, hi = 1, len(title)
+        def ellipsize_one_line(s, font, max_w):
+            if not s:
+                return s
+            bbox = draw.textbbox((0, 0), s, font=font)
+            if (bbox[2] - bbox[0]) <= max_w:
+                return s
+            lo, hi = 1, len(s)
             best = "…"
             while lo <= hi:
                 mid = (lo + hi) // 2
-                cand = title[:mid].rstrip() + "…"
-                w = draw.textbbox((0, 0), cand, font=title_font)[2]
-                if w <= text_w:
+                cand = s[:mid].rstrip() + "…"
+                w = draw.textbbox((0, 0), cand, font=font)[2]
+                if w <= max_w:
                     best = cand
                     lo = mid + 1
                 else:
                     hi = mid - 1
-            title_draw = best
+            return best
+
+        desired_start = 36
+        title_font = shrink_to_fit_one_line(title, desired_start, 24, text_w)
+        title_draw = title
+        if draw.textbbox((0, 0), title_draw, font=title_font)[2] > text_w:
+            title_draw = ellipsize_one_line(title, title_font, text_w)
 
         draw.text((text_x, text_top), title_draw, fill=fg, font=title_font)
-        title_bbox = draw.textbbox((text_x, text_top), title_draw, font=title_font)
-        cursor_y = title_bbox[3] + 6
+        tb = draw.textbbox((text_x, text_top), title_draw, font=title_font)
+        cursor_y = tb[3] + 4
 
-        # Artist (channel)
-        artist_text = f"{channel} (F..."
-        draw.text((text_x, cursor_y), artist_text, fill=muted, font=artist_font)
-        artist_bbox = draw.textbbox((text_x, cursor_y), artist_text, font=artist_font)
-        cursor_y = artist_bbox[3] + 32
+        draw.text((text_x, cursor_y), channel, fill=muted, font=meta_font)
+        cb = draw.textbbox((text_x, cursor_y), channel, font=meta_font)
+        cursor_y = cb[3] + 28
 
-        # Progress bar
-        bar_h = 5
-        bar_y = panel_y1 - 78
+        bar_h = 6
+        bar_bottom_margin = 70
+        bar_y0 = min(cursor_y, panel_y1 - bar_bottom_margin)
         bar_x0 = text_x
         bar_x1 = text_right
-        bar_w = bar_x1 - bar_x0
 
-        # Background bar
-        draw.rounded_rectangle((bar_x0, bar_y, bar_x1, bar_y + bar_h), radius=2.5, fill=(200, 200, 200))
-
-        # Progress (30% in your example)
-        progress = 0.30
-        prog_w = int(bar_w * progress)
+        draw.rounded_rectangle((bar_x0, bar_y0, bar_x1, bar_y0 + bar_h), radius=3, fill=(220, 220, 220))
+        progress = 0.4
         draw.rounded_rectangle(
-            (bar_x0, bar_y, bar_x0 + prog_w, bar_y + bar_h),
-            radius=2.5,
-            fill=primary_color
+            (bar_x0, bar_y0, bar_x0 + int((bar_x1 - bar_x0) * progress), bar_y0 + bar_h),
+            radius=3,
+            fill=palette[0],
         )
 
-        # Final output
         out = base.convert("RGB")
+        os.makedirs("cache", exist_ok=True)
         out.save(final_path, "PNG")
 
         try:
