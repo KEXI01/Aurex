@@ -1,0 +1,24 @@
+name: aurex
+image: python:3.10-slim
+command: bash start
+workdir: /app
+sync:
+  - .:/app
+volumes:
+  - /root/.cache
+forward:
+  - 8080:8080
+environment:
+  API_ID: ""
+  API_HASH: ""
+  BOT_TOKEN: ""
+  MONGO_DB_URI: ""
+  LOGGER_ID: ""
+  OWNER_ID: ""
+  STRING_SESSION: ""
+  API_URL: ""
+build:
+  commands:
+    - apt update && apt install -y ffmpeg
+    - pip install -U pip wheel setuptools
+    - pip install -r requirements.txt
