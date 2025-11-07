@@ -82,7 +82,7 @@ async def start_pm(client, message: Message, _):
     else:
         out = private_panel(_)
         await message.reply(
-            text='<blockquote><b><u>ᴅɪᴠᴇ ɪɴᴛᴏ ᴀ ᴍᴜꜱɪᴄᴀʟ ᴜɴɪᴠᴇʀꜱᴇ 🎶</u></b></blockquote>\n<blockquote><b><u>ᴇʟᴇᴠᴀᴛᴇ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴠᴏɪᴄᴇ & ᴠɪᴅᴇᴏ ᴄʜᴀᴛꜱ ᴡɪᴛʜ ʜɪɢʜ-Qᴜᴀʟɪᴛʏ ᴍᴜꜱɪᴄ.</u>\nᴛʏᴘᴇ /help ᴛᴏ ꜱᴇᴇ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅꜱ</b></blockquote>\n<blockquote>''<b>Ɵᴘᴜs ᴠ2</b><a href="https://files.catbox.moe/px677k.mp4">.</a>1 [B2.01.0]</blockquote>',
+            text='<blockquote><b><u>ᴅɪᴠᴇ ɪɴᴛᴏ ᴀ ᴍᴜꜱɪᴄᴀʟ ᴜɴɪᴠᴇʀꜱᴇ 🎶</u></b></blockquote>\n<blockquote><b><u>ᴇʟᴇᴠᴀᴛᴇ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴠᴏɪᴄᴇ & ᴠɪᴅᴇᴏ ᴄʜᴀᴛꜱ ᴡɪᴛʜ ʜɪɢʜ-Qᴜᴀʟɪᴛʏ ᴍᴜꜱɪᴄ.</u>\nᴛʏᴘᴇ /help ᴛᴏ ꜱᴇᴇ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅꜱ</b></blockquote>\n<blockquote>''<b>V2</b><a href="https://envs.sh/5kd.mp4">.</a>1 [B2.01.0]</blockquote>',
             reply_markup=InlineKeyboardMarkup(out),
         )
         if await is_on_off(2):
