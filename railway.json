@@ -1,0 +1,18 @@
+{
+  "build": {
+    "builder": "python"
+  },
+  "deploy": {
+    "startCommand": "bash start"
+  },
+  "env": {
+    "API_ID": "",
+    "API_HASH": "",
+    "BOT_TOKEN": "",
+    "MONGO_DB_URI": "",
+    "LOGGER_ID": "",
+    "OWNER_ID": "",
+    "STRING_SESSION": "",
+    "API_URL": ""
+  }
+}
