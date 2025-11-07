@@ -1,6 +1,6 @@
-name: aurex
+name: opus
 services:
-  - name: aurex
+  - name: opus 
     type: web
     runtime: python3
     ports:
