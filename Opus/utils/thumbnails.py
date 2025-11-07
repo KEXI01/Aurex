@@ -1,270 +1,325 @@
 import os
+import re
 import aiofiles
 import aiohttp
-import asyncio
-from functools import partial
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 from youtubesearchpython.__future__ import VideosSearch
-from collections import Counter
 from config import FAILED
 
-# --- Constants ---
-CACHE_DIR = "cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
+APPLE_TEMPLATE_PATH = "Opus/assets/apple_music.png"
 
-# --- Local Fonts ---
-TITLE_FONT_PATH = "src/assets/font2.ttf"
-META_FONT_PATH = "src/assets/font.ttf"
+def _resample_lanczos():
+    try:
+        return Image.Resampling.LANCZOS
+    except AttributeError:
+        return Image.ANTIALIAS
 
-
-# --- Font loader helpers ---
-def load_font(path, size: int):
+def safe_font(path, size):
     try:
         return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
 
+def _most_common_colors(pil_img, n=3, resize=(64, 64)):
+    im = pil_img.convert("RGB").resize(resize)
+    arr = np.array(im).reshape(-1, 3)
+    quant = (arr >> 3) << 3
+    tuples = [tuple(c) for c in quant.tolist()]
+    unique, counts = np.unique(tuples, axis=0, return_counts=True)
+    idx = np.argsort(counts)[::-1]
+    colors = [tuple(map(int, unique[i])) for i in idx[:n]]
+    return colors or [(120, 120, 120)]
 
-# --- Dominant color + brightness ---
-def get_dominant_color_and_brightness(img: Image.Image):
-    small = img.resize((50, 50))
-    pixels = [p for p in small.getdata() if (len(p) == 3) or (len(p) == 4 and p[3] > 128)]
-    if not pixels:
-        return (255, 0, 0), "dark"
-    r, g, b = Counter(pixels).most_common(1)[0][0][:3]
-    brightness = (0.299 * r + 0.587 * g + 0.114 * b)
-    tone = "dark" if brightness < 128 else "light"
-    avg = (r + g + b) // 3
-    return (int((r + avg) / 2), int((g + avg) / 2), int((b + avg) / 2)), tone
+def get_contrasting_color(bg_color):
+    lum = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
+    return (30, 30, 30) if lum > 128 else (245, 245, 245)
 
+def _detect_panel_bounds(img_rgba):
+    W, H = img_rgba.size
+    gray = img_rgba.convert("L")
+    arr = np.array(gray)
 
-# --- Multilingual-safe wrapping ---
-def wrap_text_multilingual(text, font, max_width, max_lines=2, draw=None):
-    if draw is None:
-        temp = Image.new("RGBA", (10, 10))
-        draw = ImageDraw.Draw(temp)
+    thr = int(np.percentile(arr, 90))
+    mask = (arr >= thr).astype(np.uint8)
 
-    use_word_split = " " in text.strip()
-    lines = []
+    y0 = int(H * 0.25)
+    y1 = int(H * 0.75)
+    band = mask[y0:y1, :]
 
-    if use_word_split:
-        words = text.split()
-        current = ""
-        for w in words:
-            candidate = (current + " " + w).strip() if current else w
-            width = draw.textlength(candidate, font=font)
-            if width <= max_width:
-                current = candidate
-            else:
-                if current:
-                    lines.append(current)
-                current = w
-            if len(lines) >= max_lines:
-                break
-        if current and len(lines) < max_lines:
-            lines.append(current)
-    else:
-        current = ""
-        for ch in text:
-            candidate = current + ch
-            width = draw.textlength(candidate, font=font)
-            if width <= max_width:
-                current = candidate
-            else:
-                lines.append(current)
-                current = ch
-            if len(lines) >= max_lines:
-                break
-        if current and len(lines) < max_lines:
-            lines.append(current)
+    visited = np.zeros_like(band, dtype=np.uint8)
+    best = None
+    h, w = band.shape
 
-    joined = "".join(lines)
-    if len(joined) < len(text) and lines:
-        last = lines[-1]
-        ellipsis = ".."
-        while draw.textlength(last + ellipsis, font=font) > max_width and len(last) > 0:
-            last = last[:-1]
-        lines[-1] = last + ellipsis if len(last) > 0 else ellipsis
+    def neighbors(r, c):
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < h and 0 <= cc < w:
+                yield rr, cc
 
-    return lines[:max_lines]
+    for r in range(h):
+        for c in range(w):
+            if band[r, c] and not visited[r, c]:
+                stack = [(r, c)]
+                visited[r, c] = 1
+                min_r = max_r = r
+                min_c = max_c = c
+                area = 0
+                while stack:
+                    rr, cc = stack.pop()
+                    area += 1
+                    min_r = min(min_r, rr)
+                    max_r = max(max_r, rr)
+                    min_c = min(min_c, cc)
+                    max_c = max(max_c, cc)
+                    for nr, nc in neighbors(rr, cc):
+                        if band[nr, nc] and not visited[nr, nc]:
+                            visited[nr, nc] = 1
+                            stack.append((nr, nc))
+                comp_x_center = (min_c + max_c) / 2
+                if best is None or (area > best[0] and comp_x_center > w * 0.5):
+                    X0, X1 = min_c, max_c
+                    Y0, Y1 = y0 + min_r, y0 + max_r
+                    best = (area, X0, X1, Y0, Y1)
 
+    if best is None:
+        panel_w = int(W * 0.68)
+        panel_h = int(H * 0.36)
+        panel_x0 = (W - panel_w) // 2
+        panel_x1 = panel_x0 + panel_w
+        panel_y0 = (H - panel_h) // 2
+        panel_y1 = panel_y0 + panel_h
+        return panel_x0, panel_x1, panel_y0, panel_y1
 
-# --- Text with shadow ---
-def draw_text_with_shadow(draw, pos, text, font, fill):
-    x, y = pos
-    draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, 200))
-    draw.text((x, y), text, font=font, fill=fill)
+    _, px0, px1, py0, py1 = best
+    pad_y = int(H * 0.05)
+    py0 = max(0, py0 - pad_y)
+    py1 = min(H - 1, py1 + pad_y)
+    return px0, px1, py0, py1
 
+def _detect_left_card_bounds(img_rgba):
+    W, H = img_rgba.size
+    gray = img_rgba.convert("L")
+    arr = np.array(gray)
 
-# --- Async blur helper ---
-async def blur_image(img, radius):
-    return await asyncio.to_thread(img.filter, ImageFilter.GaussianBlur(radius))
+    x_band = int(W * 0.28)
+    sub = arr[:, :x_band]
 
+    thr = int(np.percentile(sub, 88))
+    mask = (sub >= thr).astype(np.uint8)
 
-# --- Truncate title ---
-def truncate_title(text, max_words=25, max_chars=120, hard_char_limit=25):
-    words = text.split()
-    if len(words) > max_words or len(text) > max_chars:
-        text = " ".join(words[:max_words])[:max_chars].rstrip()
-    if len(text) > hard_char_limit:
-        text = text[:hard_char_limit].rstrip() + "."
-    return text
+    visited = np.zeros_like(mask, dtype=np.uint8)
+    best = None
+    h, w = mask.shape
 
+    def neighbors(r, c):
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < h and 0 <= cc < w:
+                yield rr, cc
 
-# --- Adaptive font size for title only ---
-def choose_title_font(text, max_width, max_lines=2):
-    for size in (48, 44, 40, 36, 32, 30, 28, 26, 24):
-        f = load_font(TITLE_FONT_PATH, size)
-        temp = Image.new("RGBA", (10, 10))
-        d = ImageDraw.Draw(temp)
-        lines = wrap_text_multilingual(text, f, max_width, max_lines=max_lines, draw=d)
-        if len(lines) <= max_lines:
-            fits = all(d.textlength(line, font=f) <= max_width for line in lines)
-            if fits:
-                return f
-    return load_font(TITLE_FONT_PATH, 24)
+    for r in range(h):
+        for c in range(w):
+            if mask[r, c] and not visited[r, c]:
+                stack = [(r, c)]
+                visited[r, c] = 1
+                min_r = max_r = r
+                min_c = max_c = c
+                area = 0
+                while stack:
+                    rr, cc = stack.pop()
+                    area += 1
+                    min_r = min(min_r, rr)
+                    max_r = max(max_r, rr)
+                    min_c = min(min_c, c)
+                    max_c = max(max_c, c)
+                    for nr, nc in neighbors(rr, cc):
+                        if mask[nr, nc] and not visited[nr, nc]:
+                            visited[nr, nc] = 1
+                            stack.append((nr, nc))
+                comp_h = max_r - min_r + 1
+                comp_w = max_c - min_c + 1
+                if comp_h > comp_w and (best is None or area > best[0]):
+                    X0, X1 = min_c, max_c
+                    Y0, Y1 = min_r, max_r
+                    best = (area, X0, X1, Y0, Y1)
 
+    if best is None:
+        card_w = int(W * 0.08)
+        card_h = int(H * 0.36)
+        x0 = int(W * 0.04)
+        x1 = x0 + card_w
+        y0 = (H - card_h) // 2
+        y1 = y0 + card_h
+        return x0, x1, y0, y1
 
-# --- Main thumbnail generator ---
-async def get_thumb(videoid: str) -> str:
-    cache_path = os.path.join(CACHE_DIR, f"{videoid}_cinematic_final.png")
-    if os.path.exists(cache_path):
-        return cache_path
+    _, lx0, lx1, ly0, ly1 = best
+    return lx0, lx1, ly0, ly1
+
+async def get_thumb(videoid):
+    final_path = f"cache/{videoid}.png"
+    if os.path.isfile(final_path):
+        return final_path
+
+    url = f"https://www.youtube.com/watch?v={videoid}"
 
     try:
-        search = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
-        result = await search.next()
-        data = result["result"][0]
-        title = truncate_title(data.get("title", "Unknown Title"))
-        thumbnail = data.get("thumbnails", [{}])[0].get("url", FAILED)
-        channel = data.get("channel", {}).get("name", "Unknown Channel")
-        views = data.get("viewCount", {}).get("short", "Unknown Views")
-        duration = data.get("duration", "Live")
-    except Exception:
-        title, thumbnail, channel, views, duration = (
-            "Unknown Title",
-            FAILED,
-            "Unknown Channel",
-            "Unknown Views",
-            "Live",
+        search = VideosSearch(url, limit=1)
+        results = await search.result()
+        if not results or "result" not in results:
+            return FAILED
+
+        r0 = results["result"][0]
+        title = re.sub(r"\s+", " ", r0.get("title", "Unknown Title")).strip()
+        channel = r0.get("channel", {})
+        if isinstance(channel, dict):
+            channel = channel.get("name", "Youtube")
+        elif not channel:
+            channel = "Youtube"
+
+        thumb_field = r0.get("thumbnails") or r0.get("thumbnail") or []
+        if isinstance(thumb_field, list) and thumb_field:
+            thumbnail_url = thumb_field[0].get("url", FAILED).split("?")[0]
+        elif isinstance(thumb_field, dict):
+            thumbnail_url = thumb_field.get("url", FAILED).split("?")[0]
+        else:
+            thumbnail_url = str(thumb_field).split("?")[0] if thumb_field else FAILED
+
+        os.makedirs("cache", exist_ok=True)
+        raw_path = f"cache/raw_{videoid}.jpg"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(thumbnail_url) as resp:
+                if resp.status != 200:
+                    return FAILED
+                async with aiofiles.open(raw_path, "wb") as f:
+                    await f.write(await resp.read())
+
+        if not os.path.exists(APPLE_TEMPLATE_PATH):
+            return FAILED
+
+        base = Image.open(APPLE_TEMPLATE_PATH).convert("RGBA")
+        W, H = base.size
+        draw = ImageDraw.Draw(base)
+
+        panel_x0, panel_x1, panel_y0, panel_y1 = _detect_panel_bounds(base)
+        lx0, lx1, ly0, ly1 = _detect_left_card_bounds(base)
+        left_card_h = (ly1 - ly0 + 1)
+
+        GAP = 8
+        RADIUS = max(12, left_card_h // 8)
+        album_h = int(left_card_h * 1.10)
+        album_w = album_h
+
+        album_x = lx0 - 7
+        album_y = ly0 - int((album_h - left_card_h) / 2)
+        album_x = max(2, min(album_x, W - album_w - 2))
+        album_y = max(2, min(album_y, H - album_h - 2))
+
+        src = Image.open(raw_path).convert("RGBA")
+        src = ImageEnhance.Color(src).enhance(2.0)
+        cover = ImageOps.fit(src, (album_w, album_h), method=_resample_lanczos(), centering=(0.5, 0.5))
+
+        mask = Image.new("L", (album_w, album_h), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, album_w, album_h), radius=RADIUS, fill=255)
+        cover.putalpha(mask)
+
+        shadow = Image.new("RGBA", (album_w + 40, album_h + 40), (0, 0, 0, 0))
+        shadow_mask = Image.new("L", (album_w + 40, album_h + 40), 0)
+        draw_mask = ImageDraw.Draw(shadow_mask)
+        draw_mask.rounded_rectangle(
+            (20, 20, album_w + 20, album_h + 20),
+            radius=RADIUS,
+            fill=180
+        )
+        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(10))
+        shadow.putalpha(shadow_mask)
+        base.paste(shadow, (album_x - 20, album_y - 20), shadow)
+
+        base.paste(cover, (album_x, album_y), cover)
+
+        palette = _most_common_colors(cover)
+        fg = (0, 0, 0)
+        muted = (120, 120, 120)
+
+        title_font_path = "Opus/assets/font2.ttf"
+        meta_font = safe_font("Opus/assets/font.ttf", 22)
+        small_font = safe_font("Opus/assets/font.ttf", 22)
+
+        INNER_PAD = 36
+        text_x = max(panel_x0 + INNER_PAD, album_x + album_w + GAP)
+        text_right = panel_x1 - INNER_PAD
+        text_w = max(1, text_right - text_x)
+        text_top = panel_y0 + 40
+
+        def shrink_to_fit_one_line(s, start_px, min_px, max_w):
+            size = start_px
+            while size >= min_px:
+                f = safe_font(title_font_path, size)
+                w = draw.textbbox((0, 0), s, font=f)[2]
+                if w <= max_w:
+                    return f
+                size -= 1
+            return safe_font(title_font_path, min_px)
+
+        def ellipsize_one_line(s, font, max_w):
+            if not s:
+                return s
+            bbox = draw.textbbox((0, 0), s, font=font)
+            if (bbox[2] - bbox[0]) <= max_w:
+                return s
+            lo, hi = 1, len(s)
+            best = "…"
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                cand = s[:mid].rstrip() + "…"
+                w = draw.textbbox((0, 0), cand, font=font)[2]
+                if w <= max_w:
+                    best = cand
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            return best
+
+        desired_start = 36
+        title_font = shrink_to_fit_one_line(title, desired_start, 24, text_w)
+        title_draw = title
+        if draw.textbbox((0, 0), title_draw, font=title_font)[2] > text_w:
+            title_draw = ellipsize_one_line(title, title_font, text_w)
+
+        draw.text((text_x, text_top), title_draw, fill=fg, font=title_font)
+        tb = draw.textbbox((text_x, text_top), title_draw, font=title_font)
+        cursor_y = tb[3] + 4
+
+        draw.text((text_x, cursor_y), channel, fill=muted, font=meta_font)
+        cb = draw.textbbox((text_x, cursor_y), channel, font=meta_font)
+        cursor_y = cb[3] + 28
+
+        bar_h = 6
+        bar_bottom_margin = 70
+        bar_y0 = min(cursor_y, panel_y1 - bar_bottom_margin)
+        bar_x0 = text_x
+        bar_x1 = text_right
+
+        draw.rounded_rectangle((bar_x0, bar_y0, bar_x1, bar_y0 + bar_h), radius=3, fill=(220, 220, 220))
+        progress = 0.4
+        draw.rounded_rectangle(
+            (bar_x0, bar_y0, bar_x0 + int((bar_x1 - bar_x0) * progress), bar_y0 + bar_h),
+            radius=3,
+            fill=palette[0],
         )
 
-    is_live = str(duration).lower() in {"live", "live now", ""}
+        out = base.convert("RGB")
+        os.makedirs("cache", exist_ok=True)
+        out.save(final_path, "PNG")
 
-    thumb_path = os.path.join(CACHE_DIR, f"thumb_{videoid}.png")
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(thumbnail) as resp:
-                if resp.status == 200:
-                    async with aiofiles.open(thumb_path, "wb") as f:
-                        await f.write(await resp.read())
-                else:
-                    return FAILED
-    except Exception:
+        try:
+            os.remove(raw_path)
+        except Exception:
+            pass
+
+        return final_path
+
+    except Exception as e:
+        print(f"[get_thumb error] {e}")
         return FAILED
-
-    try:
-        base = Image.open(thumb_path).convert("RGBA").resize((1280, 720))
-    except Exception:
-        return FAILED
-
-    dom_color, tone = get_dominant_color_and_brightness(base)
-    text_color = "white" if tone == "dark" else "#222222"
-    meta_color = "#DDDDDD" if tone == "dark" else "#333333"
-
-    bg = await blur_image(base, 25)
-    dark_overlay = Image.new("RGBA", bg.size, (0, 0, 0, 180 if tone == "dark" else 100))
-    bg = Image.alpha_composite(bg, dark_overlay)
-
-    gradient = Image.new("L", (1, 720))
-    draw_grad = ImageDraw.Draw(gradient)
-    for y in range(720):
-        draw_grad.point((0, y), int(255 * (1 - y / 720)))
-    alpha = gradient.resize(bg.size)
-    black_grad = Image.new("RGBA", bg.size, (0, 0, 0, 120))
-    bg = Image.composite(black_grad, bg, alpha)
-
-    draw = ImageDraw.Draw(bg)
-
-    text_x = 90 + 500 + 60
-    text_max_w = 640
-
-    # --- Fonts ---
-    title_font = choose_title_font(title, text_max_w, max_lines=2)
-    meta_font = load_font(META_FONT_PATH, 24)
-    time_font = load_font(META_FONT_PATH, 22)
-
-    thumb_w, thumb_h = 500, 280
-    thumb_x, thumb_y = 90, (720 - thumb_h) // 2
-    thumb = base.resize((thumb_w, thumb_h))
-
-    shadow_pad = 20
-    shadow = Image.new("RGBA", (thumb_w + shadow_pad, thumb_h + shadow_pad), (0, 0, 0, 0))
-    sdraw = ImageDraw.Draw(shadow)
-    sdraw.rounded_rectangle(
-        (shadow_pad // 2, shadow_pad // 2, thumb_w + shadow_pad // 2, thumb_h + shadow_pad // 2),
-        radius=30,
-        fill=(0, 0, 0, 140),
-    )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(12))
-    bg.paste(shadow, (thumb_x - shadow_pad // 2, thumb_y - shadow_pad // 2), shadow)
-
-    mask = Image.new("L", (thumb_w, thumb_h), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle((0, 0, thumb_w, thumb_h), radius=25, fill=255)
-    bg.paste(thumb, (thumb_x, thumb_y), mask)
-
-    title_y = thumb_y + 5
-    wrapped_title = wrap_text_multilingual(title, title_font, text_max_w, max_lines=2, draw=draw)
-    title_heights = []
-    for line in wrapped_title:
-        bbox = draw.textbbox((0, 0), line, font=title_font)
-        h = bbox[3] - bbox[1]
-        draw_text_with_shadow(draw, (text_x, title_y + sum(title_heights)), line, title_font, text_color)
-        title_heights.append(h + 6)
-    title_block_height = sum(title_heights)
-
-    meta_y = title_y + title_block_height + 5
-    meta_text = f"{channel} • {views}"
-    draw_text_with_shadow(draw, (text_x, meta_y), meta_text, meta_font, meta_color)
-
-    bar_start = text_x
-    bar_y = meta_y + 80
-    total_len = 550
-    prog_fraction = 0.35
-    prog_len = int(total_len * prog_fraction)
-
-    glow = Image.new("RGBA", bg.size, (0, 0, 0, 0))
-    gdraw = ImageDraw.Draw(glow)
-    gdraw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=30)
-    glow = glow.filter(ImageFilter.GaussianBlur(15))
-    bg = Image.alpha_composite(bg, glow)
-
-    draw = ImageDraw.Draw(bg)
-    draw.line([(bar_start, bar_y), (bar_start + prog_len, bar_y)], fill=dom_color, width=8)
-    draw.line([(bar_start + prog_len, bar_y), (bar_start + total_len, bar_y)], fill="#555555", width=6)
-    draw.ellipse(
-        [(bar_start + prog_len - 10, bar_y - 10), (bar_start + prog_len + 10, bar_y + 10)],
-        fill=dom_color,
-    )
-
-    current_time_text = f"00:{int(prog_fraction * 100):02d}"
-    draw_text_with_shadow(draw, (bar_start, bar_y + 15), current_time_text, time_font, meta_color)
-    end_text = "LIVE" if is_live else duration
-    end_fill = "red" if is_live else meta_color
-    end_width = draw.textbbox((0, 0), end_text, font=time_font)[2]
-    draw_text_with_shadow(
-        draw,
-        (bar_start + total_len - end_width, bar_y + 15),
-        end_text,
-        time_font,
-        end_fill,
-    )
-
-    bg.save(cache_path, "PNG")
-    try:
-        os.remove(thumb_path)
-    except OSError:
-        pass
-
-    return cache_path
