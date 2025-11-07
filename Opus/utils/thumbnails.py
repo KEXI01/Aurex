@@ -165,7 +165,7 @@ async def get_thumb(videoid):
 
     try:
         search = VideosSearch(url, limit=1)
-        results = await search.result()
+        results = search.result()
         if not results or "result" not in results:
             return FAILED
 
