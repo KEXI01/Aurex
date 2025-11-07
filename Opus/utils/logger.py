@@ -15,7 +15,7 @@ async def play_logs(message, streamtype):
 
     log_text = f"""
 <b>{app.mention} •Current Playback logs</b>
-────────────────────
+───────────────
 
 <b>Chat:</b> {message.chat.title or 'Private Chat'}
 <b>Chat_ID:</b> <code>{message.chat.id}</code>
@@ -27,7 +27,7 @@ async def play_logs(message, streamtype):
 
 <b>Track Query:</b> {message.text.split(None, 1)[1]}
 <b>Stream :</b> {streamtype}
-────────────────────
+───────────────
 """
 
     if message.chat.id != LOGGER_ID:
