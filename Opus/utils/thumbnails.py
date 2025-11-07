@@ -165,8 +165,11 @@ async def get_thumb(videoid):
 
     try:
         search = VideosSearch(url, limit=1)
-        results = search.result()
-        if not results or "result" not in results:
+        try:
+            results = await search.next()
+        except TypeError:
+            results = search.result()
+        if not results or "result" not in results or not results["result"]:
             return FAILED
 
         r0 = results["result"][0]
@@ -178,12 +181,14 @@ async def get_thumb(videoid):
             channel = "Youtube"
 
         thumb_field = r0.get("thumbnails") or r0.get("thumbnail") or []
-        if isinstance(thumb_field, list) and thumb_field:
-            thumbnail_url = thumb_field[0].get("url", FAILED).split("?")[0]
+        if isinstance(thumb_field, list) and thumb_field and isinstance(thumb_field[0], dict):
+            thumbnail_url = (thumb_field[0].get("url") or "").split("?")[0]
         elif isinstance(thumb_field, dict):
-            thumbnail_url = thumb_field.get("url", FAILED).split("?")[0]
+            thumbnail_url = (thumb_field.get("url") or "").split("?")[0]
         else:
-            thumbnail_url = str(thumb_field).split("?")[0] if thumb_field else FAILED
+            thumbnail_url = str(thumb_field).split("?")[0] if thumb_field else ""
+        if not thumbnail_url:
+            return FAILED
 
         os.makedirs("cache", exist_ok=True)
         raw_path = f"cache/raw_{videoid}.jpg"
