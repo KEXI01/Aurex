@@ -1,0 +1,23 @@
+name: aurex
+services:
+  - name: aurex
+    type: web
+    runtime: python3
+    ports:
+      - port: 8080
+        protocol: http
+    env:
+      API_ID: ""
+      API_HASH: ""
+      BOT_TOKEN: ""
+      MONGO_DB_URI: ""
+      LOGGER_ID: ""
+      OWNER_ID: ""
+      STRING_SESSION: ""
+      API_URL: ""
+    build:
+      commands:
+        - pip install -U pip wheel setuptools
+        - pip install -r requirements.txt
+    run:
+      command: bash start
