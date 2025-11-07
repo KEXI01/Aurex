@@ -92,30 +92,10 @@ class YouTubeAPI:
         return None
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
-        q = query.strip()
-        if self._url_pattern.search(q):
-            prepared = self._prepare_link(q)
-            try:
-                stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
-                if stdout:
-                    info = json.loads(stdout.decode())
-                    return {
-                        "title": info.get("title", ""),
-                        "duration": info.get("duration_string") or info.get("duration"),
-                        "thumbnail": (info.get("thumbnail") or "").split("?")[0],
-                        "thumbnails": [{"url": (info.get("thumbnail") or "").split("?")[0]}],
-                        "id": info.get("id", ""),
-                        "webpage_url": info.get("webpage_url") or prepared,
-                        "is_live": bool(info.get("is_live")),
-                    }
-            except Exception:
-                pass
-        try:
-            data = await VideosSearch(q, limit=5).next()
-            results = data.get("result", [])
-            return results[0] if results else None
-        except Exception:
-            return None
+        q = self._prepare_link(query)
+        data = await VideosSearch(q, limit=1).next()
+        result = data.get("result", [])
+        return result[0] if result else None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -133,14 +113,9 @@ class YouTubeAPI:
         if not info:
             raise ValueError("Video not found")
         dt = info.get("duration")
-        if isinstance(dt, int):
-            ds = dt
-            dt_str = None
-        else:
-            dt_str = dt
-            ds = int(time_to_seconds(dt)) if dt else 0
+        ds = int(time_to_seconds(dt)) if dt else 0
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
-        return info.get("title", ""), dt_str, ds, thumb, info.get("id", "")
+        return info.get("title", ""), dt, ds, thumb, info.get("id", "")
 
     async def title(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
@@ -148,8 +123,7 @@ class YouTubeAPI:
 
     async def duration(self, link: str, videoid: Union[str, bool, None] = None) -> Optional[str]:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
-        d = info.get("duration") if info else None
-        return str(d) if isinstance(d, int) else d
+        return info.get("duration") if info else None
 
     async def thumbnail(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
@@ -175,16 +149,15 @@ class YouTubeAPI:
             "yt-dlp",
             *(_cookies_args()),
             "-i",
-            "--yes-playlist",
-            "--skip-download",
-            "--flat-playlist",
             "--get-id",
+            "--flat-playlist",
             "--playlist-end",
             str(limit),
+            "--skip-download",
             link,
         )
         items = stdout.decode().strip().split("\n") if stdout else []
-        return [i for i in items if i and i.lower() != "mix"]
+        return [i for i in items if i]
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
         try:
@@ -198,18 +171,14 @@ class YouTubeAPI:
                 raise ValueError("Track not found (yt-dlp fallback)")
             info = json.loads(stdout.decode())
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
-        title = info.get("title", "")
-        vid = info.get("id", "")
-        duration_val = info.get("duration")
-        duration_min = duration_val if isinstance(duration_val, str) else None
         details = {
-            "title": title,
+            "title": info.get("title", ""),
             "link": info.get("webpage_url", self._prepare_link(link, videoid)),
-            "vidid": vid,
-            "duration_min": duration_min,
+            "vidid": info.get("id", ""),
+            "duration_min": info.get("duration") if isinstance(info.get("duration"), str) else None,
             "thumb": thumb,
         }
-        return details, vid
+        return details, info.get("id", "")
 
     async def formats(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[List[Dict], str]:
         link = self._prepare_link(link, videoid)
