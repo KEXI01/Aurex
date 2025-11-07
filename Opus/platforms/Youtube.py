@@ -91,11 +91,71 @@ class YouTubeAPI:
                     return ent.url
         return None
 
+    # changed: new helpers for better search ranking
+    def _norm(self, s: str) -> List[str]:
+        s = (s or "").lower()
+        s = re.sub(r"[^\w\s]", " ", s)
+        tokens = [t for t in s.split() if t]
+        return tokens[:30]
+
+    def _score(self, query: str, title: str, duration: Optional[Union[str, int]]) -> float:
+        q = set(self._norm(query))
+        t = set(self._norm(title))
+        if not t:
+            return 0.0
+        overlap = len(q & t) / max(1, len(q))
+        dur_pen = 0.0
+        if isinstance(duration, str):
+            try:
+                secs = int(time_to_seconds(duration))
+            except Exception:
+                secs = 0
+        elif isinstance(duration, int):
+            secs = duration
+        else:
+            secs = 0
+        if secs == 0:
+            dur_pen -= 0.05
+        if secs <= 45:
+            dur_pen -= 0.15
+        if "shorts" in (title or "").lower():
+            dur_pen -= 0.2
+        if "live" in (title or "").lower():
+            dur_pen -= 0.25
+        return max(0.0, overlap + dur_pen)
+
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
-        q = self._prepare_link(query)
-        data = await VideosSearch(q, limit=1).next()
-        result = data.get("result", [])
-        return result[0] if result else None
+        q = query.strip()
+        if self._url_pattern.search(q):
+            prepared = self._prepare_link(q)
+            try:
+                stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
+                if stdout:
+                    info = json.loads(stdout.decode())
+                    # normalize to VideosSearch-like keys used elsewhere
+                    return {
+                        "title": info.get("title", ""),
+                        "duration": info.get("duration_string") or info.get("duration"),
+                        "thumbnail": (info.get("thumbnail") or "").split("?")[0],
+                        "thumbnails": [{"url": (info.get("thumbnail") or "").split("?")[0]}],
+                        "id": info.get("id", ""),
+                        "webpage_url": info.get("webpage_url") or prepared,
+                        "is_live": bool(info.get("is_live")),
+                    }
+            except Exception:
+                pass
+        try:
+            data = await VideosSearch(q, limit=8).next()
+            results = data.get("result", [])
+            if not results:
+                return None
+            best = max(
+                results,
+                key=lambda r: self._score(q, r.get("title", ""), r.get("duration")),
+            )
+            return best
+        except Exception:
+            return None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -113,9 +173,14 @@ class YouTubeAPI:
         if not info:
             raise ValueError("Video not found")
         dt = info.get("duration")
-        ds = int(time_to_seconds(dt)) if dt else 0
+        if isinstance(dt, int):
+            ds = dt
+            dt_str = None
+        else:
+            dt_str = dt
+            ds = int(time_to_seconds(dt)) if dt else 0
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
-        return info.get("title", ""), dt, ds, thumb, info.get("id", "")
+        return info.get("title", ""), dt_str, ds, thumb, info.get("id", "")
 
     async def title(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
@@ -123,7 +188,8 @@ class YouTubeAPI:
 
     async def duration(self, link: str, videoid: Union[str, bool, None] = None) -> Optional[str]:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
-        return info.get("duration") if info else None
+        d = info.get("duration") if info else None
+        return str(d) if isinstance(d, int) else d
 
     async def thumbnail(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
@@ -142,6 +208,7 @@ class YouTubeAPI:
         return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
 
     async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
+        # changed: stricter flags and normalized link to preserve order and skip mixes
         if videoid:
             link = self.playlist_url + str(videoid)
         link = link.split("&")[0]
@@ -149,15 +216,16 @@ class YouTubeAPI:
             "yt-dlp",
             *(_cookies_args()),
             "-i",
-            "--get-id",
+            "--yes-playlist",
+            "--skip-download",
             "--flat-playlist",
+            "--get-id",
             "--playlist-end",
             str(limit),
-            "--skip-download",
             link,
         )
         items = stdout.decode().strip().split("\n") if stdout else []
-        return [i for i in items if i]
+        return [i for i in items if i and i.lower() != "mix"]
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
         try:
@@ -171,14 +239,18 @@ class YouTubeAPI:
                 raise ValueError("Track not found (yt-dlp fallback)")
             info = json.loads(stdout.decode())
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
+        title = info.get("title", "")
+        vid = info.get("id", "")
+        duration_val = info.get("duration")
+        duration_min = duration_val if isinstance(duration_val, str) else None
         details = {
-            "title": info.get("title", ""),
+            "title": title,
             "link": info.get("webpage_url", self._prepare_link(link, videoid)),
-            "vidid": info.get("id", ""),
-            "duration_min": info.get("duration") if isinstance(info.get("duration"), str) else None,
+            "vidid": vid,
+            "duration_min": duration_min,
             "thumb": thumb,
         }
-        return details, info.get("id", "")
+        return details, vid
 
     async def formats(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[List[Dict], str]:
         link = self._prepare_link(link, videoid)
@@ -212,11 +284,19 @@ class YouTubeAPI:
         return out, link
 
     async def slider(self, link: str, query_type: int, videoid: Union[str, bool, None] = None) -> Tuple[str, Optional[str], str, str]:
+        # changed: rank results beforehand, then index
         data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
         results = data.get("result", [])
-        if not results or query_type >= len(results):
-            raise IndexError(f"Query type index {query_type} out of range (found {len(results)} results)")
-        r = results[query_type]
+        if not results:
+            raise IndexError(f"Query type index {query_type} out of range (found 0 results)")
+        ranked = sorted(
+            results,
+            key=lambda r: self._score(link, r.get("title", ""), r.get("duration")),
+            reverse=True,
+        )
+        if query_type >= len(ranked):
+            raise IndexError(f"Query type index {query_type} out of range (found {len(ranked)} results)")
+        r = ranked[query_type]
         return (
             r.get("title", ""),
             r.get("duration"),
