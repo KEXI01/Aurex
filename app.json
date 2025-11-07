@@ -1,0 +1,52 @@
+{
+  "name": "Opus",
+  "description": "Asynchronous Telegram Music Bot built with Kurigram + uvloop.",
+  "repository": "https://github.com/KEXI01/Aurex",
+  "keywords": [
+    "telegram",
+    "music",
+    "kurigram",
+    "yt-dlp",
+    "uvloop",
+    "asyncio",
+    "docker"
+  ],
+  "stack": "heroku-22",
+  "env": {
+    "API_ID": {
+      "description": "Your Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Your Telegram API Hash from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Bot token from BotFather",
+      "required": true
+    },
+    "MONGO_DB_URI": {
+      "description": "MongoDB connection URI",
+      "required": true
+    },
+    "LOGGER_ID": {
+      "description": "Private group/channel ID for logs",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your Telegram user ID",
+      "required": true
+    },
+    "STRING_SESSION": {
+      "description": "Up to 5 userbot string sessions, comma-separated",
+      "required": false
+    },
+    "API_URL": {
+      "description": "Optional external API endpoint",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    { "url": "heroku/python" }
+  ]
+}
