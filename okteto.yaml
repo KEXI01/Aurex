@@ -1,4 +1,4 @@
-name: aurex
+name: opus
 image: python:3.10-slim
 command: bash start
 workdir: /app
