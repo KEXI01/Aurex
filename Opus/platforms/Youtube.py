@@ -91,39 +91,6 @@ class YouTubeAPI:
                     return ent.url
         return None
 
-    # changed: new helpers for better search ranking
-    def _norm(self, s: str) -> List[str]:
-        s = (s or "").lower()
-        s = re.sub(r"[^\w\s]", " ", s)
-        tokens = [t for t in s.split() if t]
-        return tokens[:30]
-
-    def _score(self, query: str, title: str, duration: Optional[Union[str, int]]) -> float:
-        q = set(self._norm(query))
-        t = set(self._norm(title))
-        if not t:
-            return 0.0
-        overlap = len(q & t) / max(1, len(q))
-        dur_pen = 0.0
-        if isinstance(duration, str):
-            try:
-                secs = int(time_to_seconds(duration))
-            except Exception:
-                secs = 0
-        elif isinstance(duration, int):
-            secs = duration
-        else:
-            secs = 0
-        if secs == 0:
-            dur_pen -= 0.05
-        if secs <= 45:
-            dur_pen -= 0.15
-        if "shorts" in (title or "").lower():
-            dur_pen -= 0.2
-        if "live" in (title or "").lower():
-            dur_pen -= 0.25
-        return max(0.0, overlap + dur_pen)
-
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
         q = query.strip()
         if self._url_pattern.search(q):
@@ -132,7 +99,6 @@ class YouTubeAPI:
                 stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
                 if stdout:
                     info = json.loads(stdout.decode())
-                    # normalize to VideosSearch-like keys used elsewhere
                     return {
                         "title": info.get("title", ""),
                         "duration": info.get("duration_string") or info.get("duration"),
@@ -145,15 +111,9 @@ class YouTubeAPI:
             except Exception:
                 pass
         try:
-            data = await VideosSearch(q, limit=8).next()
+            data = await VideosSearch(q, limit=5).next()
             results = data.get("result", [])
-            if not results:
-                return None
-            best = max(
-                results,
-                key=lambda r: self._score(q, r.get("title", ""), r.get("duration")),
-            )
-            return best
+            return results[0] if results else None
         except Exception:
             return None
 
@@ -208,7 +168,6 @@ class YouTubeAPI:
         return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
 
     async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
-        # changed: stricter flags and normalized link to preserve order and skip mixes
         if videoid:
             link = self.playlist_url + str(videoid)
         link = link.split("&")[0]
@@ -284,19 +243,11 @@ class YouTubeAPI:
         return out, link
 
     async def slider(self, link: str, query_type: int, videoid: Union[str, bool, None] = None) -> Tuple[str, Optional[str], str, str]:
-        # changed: rank results beforehand, then index
         data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
         results = data.get("result", [])
-        if not results:
-            raise IndexError(f"Query type index {query_type} out of range (found 0 results)")
-        ranked = sorted(
-            results,
-            key=lambda r: self._score(link, r.get("title", ""), r.get("duration")),
-            reverse=True,
-        )
-        if query_type >= len(ranked):
-            raise IndexError(f"Query type index {query_type} out of range (found {len(ranked)} results)")
-        r = ranked[query_type]
+        if not results or query_type >= len(results):
+            raise IndexError(f"Query type index {query_type} out of range (found {len(results)} results)")
+        r = results[query_type]
         return (
             r.get("title", ""),
             r.get("duration"),
