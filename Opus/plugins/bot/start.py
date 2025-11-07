@@ -5,7 +5,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython import VideosSearch
 import config
 from Opus import app
-from Opus.misc import _boot_
+from Opus.misc import _boot_, SUDOERS
 from Opus.plugins.sudo.sudoers import sudoers_list
 from Opus.utils.database import (
     add_served_chat,
@@ -86,9 +86,11 @@ async def start_pm(client, message: Message, _):
             reply_markup=InlineKeyboardMarkup(out),
         )
         if await is_on_off(2):
+            if message.from_user.id in SUDOERS:
+                return
             return await app.send_message(
                 chat_id=config.LOGGER_ID,
-                text=f"<blockquote><b>» <a href='https://t.me/{message.from_user.username}'>ᴜsᴇʀ</a> ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ.</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
+                text=f"» <a href='https://t.me/{message.from_user.username}'>user</a> just started the bot.\nuser id : <code>{message.from_user.id}</code>\n<a href='tg://user?id={message.from_user.id}'>profile link</a>",
                 disable_web_page_preview=True
             )
 
