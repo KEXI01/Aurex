@@ -6,19 +6,15 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 from youtubesearchpython.__future__ import VideosSearch
 
-# ----------------------------------------------------------------------
-# CONFIG
-# ----------------------------------------------------------------------
-FAILED = None                                   # return value when something fails
-APPLE_TEMPLATE_PATH = "Opus/assets/Player.png"   # <-- NEW TEMPLATE
-# ----------------------------------------------------------------------
 
+FAILED = None                                   
+APPLE_TEMPLATE_PATH = "Opus/assets/Player.png"   
 
 def _resample_lanczos():
     try:
         return Image.Resampling.LANCZOS
     except AttributeError:
-        return Image.LANCZOS   # Pillow < 9
+        return Image.LANCZOS  
 
 
 def safe_font(path, size):
@@ -28,9 +24,7 @@ def safe_font(path, size):
         return ImageFont.load_default()
 
 
-# ----------------------------------------------------------------------
-# Colour helpers
-# ----------------------------------------------------------------------
+
 def _most_common_colors(pil_img, n=3, resize=(64, 64)):
     im = pil_img.convert("RGB").resize(resize)
     arr = np.array(im).reshape(-1, 3)
@@ -47,9 +41,7 @@ def get_contrasting_color(bg_color):
     return (30, 30, 30) if lum > 128 else (245, 245, 245)
 
 
-# ----------------------------------------------------------------------
-# Panel / Card detection (unchanged – works for both templates)
-# ----------------------------------------------------------------------
+
 def _detect_panel_bounds(img_rgba):
     W, H = img_rgba.size
     gray = img_rgba.convert("L")
@@ -173,9 +165,7 @@ def _detect_left_card_bounds(img_rgba):
     return lx0, lx1, ly0, ly1
 
 
-# ----------------------------------------------------------------------
-# MAIN thumbnail generator
-# ----------------------------------------------------------------------
+
 async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) -> str | None:
     """
     Returns path to the generated PNG thumbnail (or None on failure).
@@ -186,9 +176,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     if os.path.isfile(final_path):
         return final_path
 
-    # ------------------------------------------------------------------
-    # 1. YouTube metadata + thumbnail download
-    # ------------------------------------------------------------------
+    
     url = f"https://www.youtube.com/watch?v={videoid}"
     try:
         search = VideosSearch(url, limit=1)
@@ -232,9 +220,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
         print(f"[get_thumb] YouTube fetch error: {e}")
         return FAILED
 
-    # ------------------------------------------------------------------
-    # 2. Load template & detect areas
-    # ------------------------------------------------------------------
+
     if not os.path.exists(APPLE_TEMPLATE_PATH):
         print("[get_thumb] Template missing")
         return FAILED
@@ -246,9 +232,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     panel_x0, panel_x1, panel_y0, panel_y1 = _detect_panel_bounds(base)
     lx0, lx1, ly0, ly1 = _detect_left_card_bounds(base)
 
-    # ------------------------------------------------------------------
-    # 3. Album-art (left side) – same as before
-    # ------------------------------------------------------------------
+   
     left_card_h = ly1 - ly0 + 1
     GAP = 8
     RADIUS = max(12, left_card_h // 8)
@@ -281,9 +265,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     base.paste(shadow, (album_x - 20, album_y - 20), shadow)
     base.paste(cover, (album_x, album_y), cover)
 
-    # ------------------------------------------------------------------
-    # 4. Text (title + channel)
-    # ------------------------------------------------------------------
+
     palette = _most_common_colors(cover)
     fg = (0, 0, 0)                     # dark text (template is light)
     muted = (120, 120, 120)
@@ -297,7 +279,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     text_w = max(1, text_right - text_x)
     text_top = panel_y0 + 40
 
-    # ---- shrink-to-fit title ------------------------------------------------
+    
     def shrink_to_fit_one_line(s, start_px, min_px, max_w):
         size = start_px
         while size >= min_px:
@@ -311,7 +293,6 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     desired_start = 36
     title_font = shrink_to_fit_one_line(title, desired_start, 24, text_w)
 
-    # ---- ellipsize if still too long ---------------------------------------
     def ellipsize_one_line(s, font, max_w):
         if not s:
             return s
@@ -343,9 +324,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
     cb = draw.textbbox((text_x, cursor_y), channel, font=meta_font)
     cursor_y = cb[3] + 28
 
-    # ------------------------------------------------------------------
-    # 5. **Progress bar** – replace the one that already exists in the template
-    # ------------------------------------------------------------------
+
     bar_h = 6
     bar_gap = 12
     bar_y = panel_y1 - 80          # a safe distance from bottom (adjust if needed)
@@ -365,9 +344,7 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
         radius=3, fill=palette[0]
     )
 
-    # ------------------------------------------------------------------
-    # 6. **Volume bar** – new addition under the progress bar
-    # ------------------------------------------------------------------
+   
     vol_y = bar_y + bar_h + bar_gap
     vol_h = 4
     vol_fill_w = int((bar_x1 - bar_x0) * volume)
@@ -381,13 +358,10 @@ async def get_thumb(videoid: str, progress: float = 0.4, volume: float = 0.7) ->
         radius=2, fill=palette[0]
     )
 
-    # ------------------------------------------------------------------
-    # 7. Save final image
-    # ------------------------------------------------------------------
+    
     out = base.convert("RGB")
     out.save(final_path, "PNG")
 
-    # cleanup raw thumbnail
     try:
         os.remove(raw_path)
     except Exception:
