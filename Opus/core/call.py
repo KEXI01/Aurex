@@ -1,5 +1,3 @@
-# Opus/core/call.py
-
 import os
 import config
 import asyncio
@@ -10,7 +8,7 @@ from strings import get_string
 from pytgcalls import PyTgCalls
 from datetime import datetime, timedelta
 from pyrogram.types import InlineKeyboardMarkup
-from ntgcalls import TelegramServerError
+from ntgcalls import ConnectionNotFound, TelegramServerError
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
     NoActiveGroupCall,
@@ -55,30 +53,16 @@ DEFAULT_VQ = VideoQuality.HD_720p
 ELSE_AQ = AudioQuality.HIGH
 
 
-def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # Use Flags if available in this version; otherwise omit video_flags for compatibility.
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None):
     flags = getattr(MediaStream, "Flags", None)
-    if video:
-        if flags is not None:
-            return MediaStream(
-                path,
-                audio_parameters=DEFAULT_AQ,
-                video_parameters=DEFAULT_VQ,
-                video_flags=(flags.AUTO_DETECT if video else flags.IGNORE),
-                ffmpeg_parameters=ffmpeg_params,
-            )
-        return MediaStream(
-            path,
-            audio_parameters=DEFAULT_AQ,
-            video_parameters=DEFAULT_VQ,
-            ffmpeg_parameters=ffmpeg_params,
-        )
-    else:
-        return MediaStream(
-            path,
-            audio_parameters=ELSE_AQ,
-            ffmpeg_parameters=ffmpeg_params,
-        )
+    return MediaStream(
+        media_path=path,
+        audio_parameters=DEFAULT_AQ if video else ELSE_AQ,
+        video_parameters=DEFAULT_VQ if video else None,
+        audio_flags=flags.REQUIRED if flags else None,
+        video_flags=flags.AUTO_DETECT if (flags and video) else (flags.IGNORE if flags else None),
+        ffmpeg_parameters=ffmpeg_params,
+    )
 
 
 async def _clear_(chat_id):
@@ -93,7 +77,6 @@ async def _clear_(chat_id):
 
 class Call(PyTgCalls):
     def __init__(self):
-        # Single Signal instance owns all assistants
         self.userbot1 = Client(
             name="OpusXAss1",
             api_id=config.API_ID,
@@ -318,6 +301,8 @@ class Call(PyTgCalls):
             raise AssistantErr(_["call_9"])
         except TelegramServerError:
             raise AssistantErr(_["call_10"])
+        except ConnectionNotFound:
+            raise AssistantErr(_["call_10"])
         except Exception as e:
             if "phone.CreateGroupCall" in str(e):
                 raise AssistantErr(_["call_8"])
@@ -340,7 +325,7 @@ class Call(PyTgCalls):
                 await client.change_stream(chat_id, stream)
                 return True
             except:
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
         return False
 
     async def check_autoend(self, chat_id):
@@ -349,7 +334,7 @@ class Call(PyTgCalls):
             if users <= 1:
                 if chat_id not in autoend:
                     autoend[chat_id] = datetime.now()
-                elif datetime.now() - autoend[chat_id] > timedelta(minutes=1):
+                elif datetime.now() - autoend[chat_id] > timedelta(minutes=5):
                     await self.stop_stream(chat_id)
             else:
                 autoend.pop(chat_id, None)
