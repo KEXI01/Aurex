@@ -53,17 +53,19 @@ DEFAULT_VQ = VideoQuality.HD_720p
 ELSE_AQ = AudioQuality.HIGH
 
 
-def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None):
-    flags = getattr(MediaStream, "Flags", None)
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    if video:
+        return MediaStream(
+            path,
+            audio_parameters=DEFAULT_AQ,
+            video_parameters=DEFAULT_VQ,
+            ffmpeg_parameters=ffmpeg_params,
+        )
     return MediaStream(
-        media_path=path,
-        audio_parameters=DEFAULT_AQ if video else ELSE_AQ,
-        video_parameters=DEFAULT_VQ if video else None,
-        audio_flags=flags.REQUIRED if flags else None,
-        video_flags=flags.AUTO_DETECT if (flags and video) else (flags.IGNORE if flags else None),
+        path,
+        audio_parameters=ELSE_AQ,
         ffmpeg_parameters=ffmpeg_params,
     )
-
 
 async def _clear_(chat_id):
     try:
