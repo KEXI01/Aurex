@@ -219,7 +219,7 @@ async def download_audio(link: str) -> Optional[str]:
     return await _dedup(key, run)
 
 
-async def download_video(link: str, quality: int = 720) -> Optional[str]:
+async def download_video(link: str, quality: int = 1080) -> Optional[str]:
     video_id = extract_video_id(link)
     if cached := file_exists(video_id, "mp4"):
         return cached
@@ -229,7 +229,7 @@ async def download_video(link: str, quality: int = 720) -> Optional[str]:
             api_result = await api_download_video(video_id, f"{quality}p")
             if api_result and os.path.exists(api_result):
                 return api_result
-            height = min(quality, 720)
+            height = min(quality, 1080)
             opts = _ytdlp_base_opts()
             opts.update({
                 "format": f"best[height<={height}]/best",
