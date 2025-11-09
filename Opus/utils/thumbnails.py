@@ -183,6 +183,19 @@ def _fit_font(draw, text, path, start_px, min_px, max_w):
         s -= 1
     return safe_font(path, min_px)
 
+def _fit_with_extra_chars(draw, text, path, base_px, min_px, max_w, extra_chars=7):
+    f0 = safe_font(path, base_px)
+    t0 = _ellipsize(draw, text, f0, max_w)
+    plain_len = len(t0.replace("…", ""))
+    target_len = min(len(text), plain_len + max(0, extra_chars))
+    for s in range(base_px, max(min_px, base_px - 6), -1):
+        f = safe_font(path, s)
+        cand = text[:target_len] + ("" if target_len == len(text) else "…")
+        if draw.textbbox((0, 0), cand, font=f)[2] <= max_w:
+            return f, cand
+    f = _fit_font(draw, text, path, base_px, min_px, max_w)
+    return f, _ellipsize(draw, text, f, max_w)
+
 async def get_thumb(videoid):
     out_path = f"cache/{videoid}.png"
     if os.path.isfile(out_path):
@@ -235,9 +248,22 @@ async def get_thumb(videoid):
         base = Image.open(TEMPLATE_PATH).convert("RGBA")
         W, H = base.size
         draw = ImageDraw.Draw(base)
+
         x0, y0, s, left_mask = _detect_left_square(base)
+
         src = Image.open(raw_path).convert("RGBA")
-        cover = ImageOps.fit(src, (s, s), method=_resample(), centering=(0.5, 0.5))
+
+        scale = 0.96
+        rs = max(2, int(s * scale))
+        cover = ImageOps.fit(src, (rs, rs), method=_resample(), centering=(0.5, 0.5))
+
+        canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        off_x = (s - rs) // 2 - int(s * 0.02)
+        off_y = (s - rs) // 2 + int(s * 0.03)
+        off_x = max(0, min(off_x, s - rs))
+        off_y = max(0, min(off_y, s - rs))
+        canvas.paste(cover, (off_x, off_y))
+
         if left_mask is None:
             mask = Image.new("L", (s, s), 0)
             rad = max(14, int(s * 0.08))
@@ -249,22 +275,31 @@ async def get_thumb(videoid):
             off = ((s - mask.size[0]) // 2, (s - mask.size[1]) // 2)
             tmp.paste(mask, off)
             mask = tmp
-        base.paste(cover, (x0, y0), mask)
+
+        base.paste(canvas, (x0, y0), mask)
+
         tx0, ty0, tx1, ty1 = _measure_ui_guides(base, (x0, y0, s))
         text_w = max(1, tx1 - tx0)
+
         title_font_path = "Opus/assets/font.ttf"
         channel_font_path = "Opus/assets/font2.ttf"
-        title_font = _fit_font(draw, title, title_font_path, 58, 27, text_w)
-        title_text = _ellipsize(draw, title, title_font, text_w)
+
+        title_font, title_text = _fit_with_extra_chars(draw, title, title_font_path, 56, 26, text_w, extra_chars=7)
         draw.text((tx0, ty0), title_text, fill=(255, 255, 255), font=title_font)
+
         tb = draw.textbbox((tx0, ty0), title_text, font=title_font)
         ch_y = tb[3] + max(6, int(H * 0.01))
-        ch_font = safe_font(channel_font_path, 30)
-        ch_text = _ellipsize(draw, channel, ch_font, text_w)
+
+        ch_font_base = 30
+        ch_font_min = 24
+        ch_font, ch_text = _fit_with_extra_chars(draw, channel, channel_font_path, ch_font_base, ch_font_min, text_w, extra_chars=7)
+
         ch_h = draw.textbbox((0, 0), ch_text, font=ch_font)[3]
         if ch_y + ch_h > ty1:
             ch_y = max(ty0, ty1 - ch_h)
+
         draw.text((tx0, ch_y), ch_text, fill=(255, 255, 255), font=ch_font)
+
         out = base.convert("RGB")
         out.save(out_path, "PNG")
         try:
