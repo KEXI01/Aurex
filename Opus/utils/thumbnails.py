@@ -9,6 +9,7 @@ from config import FAILED
 
 TEMPLATE_PATH = "Opus/assets/Player.png"
 
+# just used two samplers for ensuring force thumbnail creation even if one fails off /.
 def _resample():
     try:
         return Image.Resampling.LANCZOS
@@ -23,7 +24,6 @@ def safe_font(path, size):
 
 def _find_bright_rows_cols(arr, axis=0, frac=0.55, smooth=7):
     import numpy as _np
-    h, w = arr.shape
     thr = max(170, int(_np.percentile(arr, 85)))
     mask = (arr >= thr).astype(_np.uint8)
     proj = mask.mean(axis=1) if axis == 0 else mask.mean(axis=0)
@@ -46,13 +46,29 @@ def _find_bright_rows_cols(arr, axis=0, frac=0.55, smooth=7):
     centers = _np.array([(a + b) // 2 for (a, b) in bands], dtype=int)
     return centers
 
+def _detect_card(img):
+    W, H = img.size
+    arr = np.array(img.convert("L"), dtype=np.uint8)
+    thr = int(np.percentile(arr, 40))
+    mask = (arr <= thr).astype(np.uint8)
+    rows = mask.mean(axis=1)
+    cols = mask.mean(axis=0)
+    r_idx = np.where(rows > 0.1)[0]
+    c_idx = np.where(cols > 0.1)[0]
+    if not r_idx.size or not c_idx.size:
+        return int(W*0.08), int(H*0.18), int(W*0.84), int(H*0.76)
+    y0, y1 = int(r_idx[0]), int(r_idx[-1])
+    x0, x1 = int(c_idx[0]), int(c_idx[-1])
+    m = max(6, int(min(W, H)*0.01))
+    return x0+m, y0+m, x1-m, y1-m
+
 def _detect_left_square(img):
     W, H = img.size
-    gray = img.convert("L")
-    arr = np.array(gray, dtype=np.uint8)
-    x_end = int(W * 0.62)
-    margin = max(8, int(min(W, H) * 0.01))
-    sub = arr[margin:H - margin, margin:x_end]
+    gx0, gy0, gx1, gy1 = _detect_card(img)
+    gray = np.array(img.convert("L"), dtype=np.uint8)
+    sub = gray[gy0:gy1, gx0:gx1]
+    x_end = int(sub.shape[1] * 0.58)
+    sub = sub[:, :x_end]
     thr = max(200, int(np.percentile(sub, 92)))
     mask = (sub >= thr).astype(np.uint8)
     h, w = mask.shape
@@ -74,10 +90,10 @@ def _detect_left_square(img):
                 while stack:
                     rr, cc = stack.pop()
                     area += 1
-                    min_r = min(min_r, rr)
-                    max_r = max(max_r, rr)
-                    min_c = min(min_c, cc)
-                    max_c = max(max_c, cc)
+                    if rr < min_r: min_r = rr
+                    if rr > max_r: max_r = rr
+                    if cc < min_c: min_c = cc
+                    if cc > max_c: max_c = cc
                     for nr, nc in nbrs(rr, cc):
                         if mask[nr, nc] and not visited[nr, nc]:
                             visited[nr, nc] = 1
@@ -91,24 +107,26 @@ def _detect_left_square(img):
                 if best is None or score > best[0]:
                     best = (score, min_c, min_r, max_c, max_r)
     if not best:
-        s = int(H * 0.72)
-        y0 = int((H - s) * 0.50)
-        x0 = int(W * 0.085)
-        s = min(s, W - x0 - int(W * 0.5))
-        x0 = max(margin, x0)
-        y0 = max(margin, min(y0, H - s - margin))
-        return x0, y0, s, None
+        s = int(H * 0.70)
+        y0 = gy0 + int((gy1-gy0 - s) * 0.50)
+        x0 = gx0 + int((gx1-gx0) * 0.07)
+        s = min(s, gx1 - x0 - int((gx1-gx0) * 0.48))
+        inset = max(6, int(min(W, H) * 0.006))
+        m = Image.new("L", (s - inset * 2, s - inset * 2), 0)
+        rad = max(12, int((s - inset * 2) * 0.07))
+        ImageDraw.Draw(m).rounded_rectangle((0, 0, m.size[0], m.size[1]), radius=rad, fill=255)
+        return x0 + inset, y0 + inset, s - inset * 2, m
     _, x0, y0, x1, y1 = best
-    x0 += margin
-    y0 += margin
-    x1 += margin
-    y1 += margin
+    x0 += gx0
+    y0 += gy0
+    x1 += gx0
+    y1 += gy0
     s = min(x1 - x0 + 1, y1 - y0 + 1)
     cx = (x0 + x1) // 2
     cy = (y0 + y1) // 2
     half = s // 2
-    sx0 = max(0, min(cx - half, W - s))
-    sy0 = max(0, min(cy - half, H - s))
+    sx0 = max(gx0, min(cx - half, gx1 - s))
+    sy0 = max(gy0, min(cy - half, gy1 - s))
     inset = max(6, int(min(W, H) * 0.006))
     m = Image.new("L", (s - inset * 2, s - inset * 2), 0)
     rad = max(12, int((s - inset * 2) * 0.07))
@@ -117,43 +135,42 @@ def _detect_left_square(img):
 
 def _measure_ui_guides(img, thumb_box):
     W, H = img.size
-    gray = np.array(img.convert("L"), dtype=np.uint8)
-    rx0 = int(W * 0.45)
+    gx0, gy0, gx1, gy1 = _detect_card(img)
+    gray = np.array(img.convert("L"), dtype=np.uint8)[gy0:gy1, gx0:gx1]
+    rx0 = int((gx1 - gx0) * 0.45)
     right = gray[:, rx0:]
     bar_rows = _find_bright_rows_cols(right, axis=0, frac=0.65, smooth=9)
-    bar_rows = np.clip(bar_rows + 0, 0, right.shape[0]-1)
     bars = []
     for r in bar_rows:
         if not bars or abs(r - bars[-1]) > int(H * 0.06):
             bars.append(r)
     if len(bars) > 2:
         bars = [bars[0], bars[-1]]
-    bars = [int(r) for r in bars]
     col_centers = _find_bright_rows_cols(right, axis=1, frac=0.55, smooth=9)
     if col_centers.size:
         icon_col = int(col_centers.max())
-        tx1 = rx0 + icon_col - max(18, int(W * 0.015))
+        tx1 = gx0 + rx0 + icon_col - max(18, int(W * 0.015))
     else:
-        tx1 = int(W * 0.88)
+        tx1 = gx0 + int((gx1 - gx0) * 0.88)
     x0, y0, s = thumb_box
     gap = max(22, int(W * 0.016))
     tx0 = x0 + s + gap
     if len(bars) >= 2:
-        top_bar_y = min(bars)
-        bot_bar_y = max(bars)
-        ty0 = max(int(top_bar_y + H * 0.03), int(H * 0.30))
-        ty1 = min(int(bot_bar_y - H * 0.04), int(H * 0.58))
+        top_bar_y = gy0 + int(min(bars))
+        bot_bar_y = gy0 + int(max(bars))
+        ty0 = max(int(top_bar_y + H * 0.03), gy0 + int((gy1-gy0) * 0.30))
+        ty1 = min(int(bot_bar_y - H * 0.04), gy0 + int((gy1-gy0) * 0.58))
     elif len(bars) == 1:
-        b = bars[0]
-        ty0 = max(int(H * 0.32), int(b - H * 0.22))
-        ty1 = min(int(H * 0.56), int(b - H * 0.06))
+        b = gy0 + int(bars[0])
+        ty0 = max(gy0 + int((gy1-gy0) * 0.32), int(b - H * 0.22))
+        ty1 = min(gy0 + int((gy1-gy0) * 0.56), int(b - H * 0.06))
     else:
-        ty0 = int(H * 0.35)
-        ty1 = int(H * 0.52)
+        ty0 = gy0 + int((gy1-gy0) * 0.35)
+        ty1 = gy0 + int((gy1-gy0) * 0.52)
     if tx1 <= tx0:
         tx1 = tx0 + max(80, int(W * 0.12))
-    if ty1 - ty0 < max(36, int(H * 0.06)):
-        ty1 = ty0 + max(36, int(H * 0.06))
+    if ty1 - ty0 < max(40, int(H * 0.065)):
+        ty1 = ty0 + max(40, int(H * 0.065))
     return tx0, ty0, tx1, ty1
 
 def _ellipsize(draw, text, font, max_w):
@@ -232,7 +249,6 @@ async def get_thumb(videoid):
         return FAILED
     try:
         base = Image.open(TEMPLATE_PATH).convert("RGBA")
-        W, H = base.size
         draw = ImageDraw.Draw(base)
         x0, y0, s, left_mask = _detect_left_square(base)
         src = Image.open(raw_path).convert("RGBA")
@@ -253,12 +269,12 @@ async def get_thumb(videoid):
         text_w = max(1, tx1 - tx0)
         title_font_path = "Opus/assets/font.ttf"
         channel_font_path = "Opus/assets/font2.ttf"
-        title_font = _fit_font(draw, title, title_font_path, 52, 26, text_w)
+        title_font = _fit_font(draw, title, title_font_path, 60, 28, text_w)
         title_text = _ellipsize(draw, title, title_font, text_w)
         draw.text((tx0, ty0), title_text, fill=(255, 255, 255), font=title_font)
         tb = draw.textbbox((tx0, ty0), title_text, font=title_font)
-        ch_y = tb[3] + max(6, int(H * 0.008))
-        ch_font = safe_font(channel_font_path, 28)
+        ch_y = tb[3] + max(8, int(base.size[1] * 0.01))
+        ch_font = safe_font(channel_font_path, 32)
         ch_text = _ellipsize(draw, channel, ch_font, text_w)
         ch_h = draw.textbbox((0, 0), ch_text, font=ch_font)[3]
         if ch_y + ch_h > ty1:
