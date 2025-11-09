@@ -1,10 +1,10 @@
 import os
 import re
+import json
 import aiofiles
 import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from youtubesearchpython.__future__ import VideosSearch
 from config import FAILED
 
 TEMPLATE_PATH = "Opus/assets/Player.png"
@@ -34,14 +34,12 @@ def _find_bright_rows_cols(arr, axis=0, frac=0.55, smooth=7):
     idx = _np.where(proj >= cut)[0]
     bands = []
     if idx.size:
-        start = idx[0]
-        prev = idx[0]
+        start = idx[0]; prev = idx[0]
         for v in idx[1:]:
             if v == prev + 1:
                 prev = v
             else:
-                bands.append((start, prev))
-                start, prev = v, v
+                bands.append((start, prev)); start, prev = v, v
         bands.append((start, prev))
     centers = _np.array([(a + b) // 2 for (a, b) in bands], dtype=int)
     return centers
@@ -87,7 +85,7 @@ def _detect_left_square(img):
                             stack.append((nr, nc))
                 bw = max_c - min_c + 1
                 bh = max_r - min_r + 1
-                if bw == 0 or bh == 0: 
+                if bw == 0 or bh == 0:
                     continue
                 sq = 1 - abs(bw - bh) / float(max(bw, bh))
                 score = area * (0.6 + 0.4 * sq)
@@ -183,6 +181,41 @@ def _fit_font(draw, text, path, start_px, min_px, max_w):
         s -= 1
     return safe_font(path, min_px)
 
+async def _http_get(session, url):
+    try:
+        async with session.get(url) as r:
+            if r.status == 200:
+                return await r.read()
+    except Exception:
+        pass
+    try:
+        async with session.get(url, ssl=False) as r:
+            if r.status == 200:
+                return await r.read()
+    except Exception:
+        return None
+    return None
+
+async def _fetch_meta_thumb(videoid):
+    ytu = f"https://www.youtube.com/watch?v={videoid}"
+    oembed = f"https://www.youtube.com/oembed?url={ytu}&format=json"
+    maxres = f"https://i.ytimg.com/vi/{videoid}/maxresdefault.jpg"
+    hq = f"https://i.ytimg.com/vi/{videoid}/hqdefault.jpg"
+    async with aiohttp.ClientSession() as s:
+        raw = await _http_get(s, oembed)
+        title = "Unknown Title"; channel = "YouTube"
+        if raw:
+            try:
+                data = json.loads(raw.decode("utf-8", "ignore"))
+                title = re.sub(r"\s+", " ", (data.get("title") or "").strip()) or title
+                channel = re.sub(r"\s+", " ", (data.get("author_name") or "").strip()) or channel
+            except Exception:
+                pass
+        img = await _http_get(s, maxres)
+        if not img:
+            img = await _http_get(s, hq)
+        return title, channel, img
+
 async def get_thumb(videoid):
     out_path = f"cache/{videoid}.png"
     if os.path.isfile(out_path):
@@ -190,40 +223,13 @@ async def get_thumb(videoid):
     if not os.path.exists(TEMPLATE_PATH):
         return FAILED
     os.makedirs("cache", exist_ok=True)
-    try:
-        q = f"https://www.youtube.com/watch?v={videoid}"
-        vs = VideosSearch(q, limit=1)
-        try:
-            res = await vs.next()
-        except TypeError:
-            res = vs.result()
-        if not res or "result" not in res or not res["result"]:
-            return FAILED
-        r0 = res["result"][0]
-        title = re.sub(r"\s+", " ", r0.get("title", "")).strip() or "Unknown Title"
-        ch = r0.get("channel")
-        channel = (ch.get("name") or "Youtube").strip() if isinstance(ch, dict) else (ch.strip() if isinstance(ch, str) else "Youtube")
-        thumbs = r0.get("thumbnails") or r0.get("thumbnail") or []
-        url = ""
-        if isinstance(thumbs, list):
-            for t in reversed(thumbs):
-                if isinstance(t, dict) and t.get("url"):
-                    url = t["url"].split("?")[0]
-                    break
-        elif isinstance(thumbs, dict) and thumbs.get("url"):
-            url = thumbs["url"].split("?")[0]
-        if not url:
-            return FAILED
-    except Exception:
+    title, channel, img_bytes = await _fetch_meta_thumb(videoid)
+    if not img_bytes:
         return FAILED
     raw_path = f"cache/raw_{videoid}.jpg"
     try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url) as r:
-                if r.status != 200:
-                    return FAILED
-                async with aiofiles.open(raw_path, "wb") as f:
-                    await f.write(await r.read())
+        async with aiofiles.open(raw_path, "wb") as f:
+            await f.write(img_bytes)
     except Exception:
         return FAILED
     try:
@@ -249,10 +255,10 @@ async def get_thumb(videoid):
         channel_font_path = "Opus/assets/font2.ttf"
         title_font = _fit_font(draw, title, title_font_path, 64, 28, text_w)
         title_text = _ellipsize(draw, title, title_font, text_w)
-        ty0 = int(ty0 + H * 0.01)
+        ty0 = int(ty0 + H * 0.012)
         draw.text((tx0, ty0), title_text, fill=(255, 255, 255), font=title_font)
         tb = draw.textbbox((tx0, ty0), title_text, font=title_font)
-        ch_y = tb[3] + max(8, int(H * 0.012))
+        ch_y = tb[3] + max(10, int(H * 0.012))
         ch_font = safe_font(channel_font_path, 30)
         ch_text = _ellipsize(draw, channel, ch_font, text_w)
         ch_h = draw.textbbox((0, 0), ch_text, font=ch_font)[3]
