@@ -3,7 +3,7 @@ import re
 import aiofiles
 import aiohttp
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from youtubesearchpython.__future__ import VideosSearch
 from config import FAILED
 
@@ -21,22 +21,48 @@ def safe_font(path, size):
     except Exception:
         return ImageFont.load_default()
 
+def _find_bright_rows_cols(arr, axis=0, frac=0.55, smooth=7):
+    import numpy as _np
+    h, w = arr.shape
+    thr = max(170, int(_np.percentile(arr, 85)))
+    mask = (arr >= thr).astype(_np.uint8)
+    proj = mask.mean(axis=1) if axis == 0 else mask.mean(axis=0)
+    k = max(3, int(smooth))
+    win = _np.ones(k, dtype=float) / k
+    proj = _np.convolve(proj, win, mode="same")
+    cut = proj.max() * frac
+    idx = _np.where(proj >= cut)[0]
+    bands = []
+    if idx.size:
+        start = idx[0]
+        prev = idx[0]
+        for v in idx[1:]:
+            if v == prev + 1:
+                prev = v
+            else:
+                bands.append((start, prev))
+                start, prev = v, v
+        bands.append((start, prev))
+    centers = _np.array([(a + b) // 2 for (a, b) in bands], dtype=int)
+    return centers
+
 def _detect_left_square(img):
     W, H = img.size
     gray = img.convert("L")
     arr = np.array(gray, dtype=np.uint8)
-    x_end = int(W * 0.6)
-    sub = arr[:, :x_end]
-    thr = max(180, int(np.percentile(sub, 90)))
+    x_end = int(W * 0.62)
+    margin = max(8, int(min(W, H) * 0.01))
+    sub = arr[margin:H - margin, margin:x_end]
+    thr = max(200, int(np.percentile(sub, 92)))
     mask = (sub >= thr).astype(np.uint8)
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=np.uint8)
+    best = None
     def nbrs(r, c):
         for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)):
             rr, cc = r+dr, c+dc
             if 0 <= rr < h and 0 <= cc < w:
                 yield rr, cc
-    best = None
     for r in range(h):
         for c in range(w):
             if mask[r, c] and not visited[r, c]:
@@ -48,10 +74,10 @@ def _detect_left_square(img):
                 while stack:
                     rr, cc = stack.pop()
                     area += 1
-                    if rr < min_r: min_r = rr
-                    if rr > max_r: max_r = rr
-                    if cc < min_c: min_c = cc
-                    if cc > max_c: max_c = cc
+                    min_r = min(min_r, rr)
+                    max_r = max(max_r, rr)
+                    min_c = min(min_c, cc)
+                    max_c = max(max_c, cc)
                     for nr, nc in nbrs(rr, cc):
                         if mask[nr, nc] and not visited[nr, nc]:
                             visited[nr, nc] = 1
@@ -64,36 +90,70 @@ def _detect_left_square(img):
                 score = area * (0.6 + 0.4 * sq)
                 if best is None or score > best[0]:
                     best = (score, min_c, min_r, max_c, max_r)
-    if best:
-        _, x0, y0, x1, y1 = best
-        s = min(x1 - x0 + 1, y1 - y0 + 1)
-        cx = (x0 + x1) // 2
-        cy = (y0 + y1) // 2
-        half = s // 2
-        sx0 = max(0, min(cx - half, W - s))
-        sy0 = max(0, min(cy - half, H - s))
-        inset = max(4, int(min(W, H) * 0.004))
-        return sx0 + inset, sy0 + inset, s - inset * 2
-    s = int(H * 0.74)
-    y0 = int((H - s) * 0.50)
-    x0 = int(W * 0.085)
-    s = min(s, W - x0 - int(W * 0.5))
-    y0 = max(0, min(y0, H - s))
-    inset = max(4, int(min(W, H) * 0.004))
-    return x0 + inset, y0 + inset, s - inset * 2
+    if not best:
+        s = int(H * 0.72)
+        y0 = int((H - s) * 0.50)
+        x0 = int(W * 0.085)
+        s = min(s, W - x0 - int(W * 0.5))
+        x0 = max(margin, x0)
+        y0 = max(margin, min(y0, H - s - margin))
+        return x0, y0, s, None
+    _, x0, y0, x1, y1 = best
+    x0 += margin
+    y0 += margin
+    x1 += margin
+    y1 += margin
+    s = min(x1 - x0 + 1, y1 - y0 + 1)
+    cx = (x0 + x1) // 2
+    cy = (y0 + y1) // 2
+    half = s // 2
+    sx0 = max(0, min(cx - half, W - s))
+    sy0 = max(0, min(cy - half, H - s))
+    inset = max(6, int(min(W, H) * 0.006))
+    m = Image.new("L", (s - inset * 2, s - inset * 2), 0)
+    rad = max(12, int((s - inset * 2) * 0.07))
+    ImageDraw.Draw(m).rounded_rectangle((0, 0, m.size[0], m.size[1]), radius=rad, fill=255)
+    return sx0 + inset, sy0 + inset, s - inset * 2, m
 
-def _text_safe_box(W, H, thumb):
-    x0, y0, s = thumb
-    gap = max(18, int(W * 0.013))
+def _measure_ui_guides(img, thumb_box):
+    W, H = img.size
+    gray = np.array(img.convert("L"), dtype=np.uint8)
+    rx0 = int(W * 0.45)
+    right = gray[:, rx0:]
+    bar_rows = _find_bright_rows_cols(right, axis=0, frac=0.65, smooth=9)
+    bar_rows = np.clip(bar_rows + 0, 0, right.shape[0]-1)
+    bars = []
+    for r in bar_rows:
+        if not bars or abs(r - bars[-1]) > int(H * 0.06):
+            bars.append(r)
+    if len(bars) > 2:
+        bars = [bars[0], bars[-1]]
+    bars = [int(r) for r in bars]
+    col_centers = _find_bright_rows_cols(right, axis=1, frac=0.55, smooth=9)
+    if col_centers.size:
+        icon_col = int(col_centers.max())
+        tx1 = rx0 + icon_col - max(18, int(W * 0.015))
+    else:
+        tx1 = int(W * 0.88)
+    x0, y0, s = thumb_box
+    gap = max(22, int(W * 0.016))
     tx0 = x0 + s + gap
-    right_pad = int(W * 0.12)
-    tx1 = W - right_pad
-    ty0 = y0 + int(s * 0.18)
-    ty1 = y0 + int(s * 0.42)
+    if len(bars) >= 2:
+        top_bar_y = min(bars)
+        bot_bar_y = max(bars)
+        ty0 = max(int(top_bar_y + H * 0.03), int(H * 0.30))
+        ty1 = min(int(bot_bar_y - H * 0.04), int(H * 0.58))
+    elif len(bars) == 1:
+        b = bars[0]
+        ty0 = max(int(H * 0.32), int(b - H * 0.22))
+        ty1 = min(int(H * 0.56), int(b - H * 0.06))
+    else:
+        ty0 = int(H * 0.35)
+        ty1 = int(H * 0.52)
     if tx1 <= tx0:
-        tx0, tx1 = int(W * 0.56), int(W * 0.88)
-    ty0 = max(ty0, int(H * 0.18))
-    ty1 = min(ty1, int(H * 0.56))
+        tx1 = tx0 + max(80, int(W * 0.12))
+    if ty1 - ty0 < max(36, int(H * 0.06)):
+        ty1 = ty0 + max(36, int(H * 0.06))
     return tx0, ty0, tx1, ty1
 
 def _ellipsize(draw, text, font, max_w):
@@ -174,26 +234,35 @@ async def get_thumb(videoid):
         base = Image.open(TEMPLATE_PATH).convert("RGBA")
         W, H = base.size
         draw = ImageDraw.Draw(base)
-        x0, y0, s = _detect_left_square(base)
+        x0, y0, s, left_mask = _detect_left_square(base)
         src = Image.open(raw_path).convert("RGBA")
         cover = ImageOps.fit(src, (s, s), method=_resample(), centering=(0.5, 0.5))
-        mask = Image.new("L", (s, s), 0)
-        rad = max(12, int(s * 0.06))
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, s, s), radius=rad, fill=255)
+        if left_mask is None:
+            mask = Image.new("L", (s, s), 0)
+            rad = max(12, int(s * 0.06))
+            ImageDraw.Draw(mask).rounded_rectangle((0, 0, s, s), radius=rad, fill=255)
+        else:
+            mask = left_mask
+        if mask.size != (s, s):
+            tmp = Image.new("L", (s, s), 0)
+            off = ((s - mask.size[0]) // 2, (s - mask.size[1]) // 2)
+            tmp.paste(mask, off)
+            mask = tmp
         base.paste(cover, (x0, y0), mask)
-        tx0, ty0, tx1, ty1 = _text_safe_box(W, H, (x0, y0, s))
+        tx0, ty0, tx1, ty1 = _measure_ui_guides(base, (x0, y0, s))
         text_w = max(1, tx1 - tx0)
         title_font_path = "Opus/assets/font.ttf"
         channel_font_path = "Opus/assets/font2.ttf"
-        title_font = _fit_font(draw, title, title_font_path, start_px=52, min_px=28, max_w=text_w)
+        title_font = _fit_font(draw, title, title_font_path, 52, 26, text_w)
         title_text = _ellipsize(draw, title, title_font, text_w)
         draw.text((tx0, ty0), title_text, fill=(255, 255, 255), font=title_font)
         tb = draw.textbbox((tx0, ty0), title_text, font=title_font)
-        ch_y = tb[3] + max(6, int(H * 0.007))
+        ch_y = tb[3] + max(6, int(H * 0.008))
         ch_font = safe_font(channel_font_path, 28)
         ch_text = _ellipsize(draw, channel, ch_font, text_w)
-        if ch_y > ty1 - (draw.textbbox((0, 0), ch_text, font=ch_font)[3] - draw.textbbox((0, 0), ch_text, font=ch_font)[1]):
-            ch_y = max(ty0, ty1 - (draw.textbbox((0, 0), ch_text, font=ch_font)[3] - draw.textbbox((0, 0), ch_text, font=ch_font)[1]))
+        ch_h = draw.textbbox((0, 0), ch_text, font=ch_font)[3]
+        if ch_y + ch_h > ty1:
+            ch_y = max(ty0, ty1 - ch_h)
         draw.text((tx0, ch_y), ch_text, fill=(255, 255, 255), font=ch_font)
         out = base.convert("RGB")
         out.save(out_path, "PNG")
