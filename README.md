@@ -1,4 +1,4 @@
-<h1 align="center">🎶 OPUS — Asynced + uvlooped Kurigram Music Bot</h1>
+<h1 align="center">🎶 OPUS — uv Asynced + Music Bot</h1>
 
 <p align="center">
   <a href="https://github.com/KEXI01/Aurex/stargazers"><img src="https://img.shields.io/github/stars/KEXI01/Aurex?style=for-the-badge&color=yellow" /></a>
@@ -12,7 +12,7 @@
 ---
 
 ### 🪩 Overview
-**Opus** is a next-generation **asynchronous Telegram Music Bot** powered by **Kurigram v2.2.13**, **uvloop**, and **yt-dlp**.  
+**Opus** is a next-generation **asynchronous Telegram Music Bot** powered by **pyrotgfork v2.2.16**, **uvloop**, and **yt-dlp**.  
 It delivers high-quality music streaming in Telegram voice chats with MongoDB persistence, advanced caching, and a modular async design.  
 Fully deployable on **Heroku**, **Render**, **Railway**, **Koyeb**, **Docker**, or any **VPS**.
 
@@ -91,7 +91,7 @@ docker run --env-file .env aurex
 
 ### 🧠 Tech Stack
 - **Python 3.10+**
-- **Kurigram v2.2.13**
+- **pyrotgfork v2.2.16**
 - **yt-dlp (master)**
 - **Py-TGCalls 1.2.9 / NTGCalls 1.1.2**
 - **uvloop / asyncio**
@@ -133,5 +133,5 @@ You are free to modify and distribute the code under GPL terms.
 ---
 
 <p align="center">
-  <b>🚀 Fast • Modular • Asynchronous — Built on Kurigram + uvloop</b>
+  <b>🚀 Fast • Modular • Asynchronous — Built on pyrotgfork + uvloop</b>
 </p>
