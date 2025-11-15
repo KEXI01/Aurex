@@ -248,8 +248,8 @@ async def get_thumb(videoid):
         muted = (120, 120, 120)
 
         title_font_path = "Opus/assets/font.ttf"
-        meta_font = safe_font("Opus/assets/font2.ttf", 22)
-        small_font = safe_font("Opus/assets/font.ttf", 22)
+        meta_font = safe_font("Opus/assets/font2.ttf", 16)
+        small_font = safe_font("Opus/assets/font.ttf", 16)
 
         INNER_PAD = 36
         text_x = max(panel_x0 + INNER_PAD, album_x + album_w + GAP)
