@@ -9,7 +9,7 @@ from time import time
 from pyrogram import filters, Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from config import OWNER_ID
+from config import OWNER_ID, LOGGER_ID
 from Opus import app
 
 
@@ -26,15 +26,25 @@ async def edit_or_reply(msg: Message, **kwargs):
     await func(**kwargs)
 
 
+def private_and_owner(filter, client: Client, message: Message):
+    return bool(
+        message.from_user
+        and message.from_user.id == OWNER_ID
+        and message.chat.id == LOGGER_ID
+    )
+
+
 @app.on_edited_message(
     filters.command("eval")
     & filters.user(OWNER_ID)
+    & filters.create(private_and_owner)
     & ~filters.forwarded
     & ~filters.via_bot
 )
 @app.on_message(
     filters.command("eval")
     & filters.user(OWNER_ID)
+    & filters.create(private_and_owner)
     & ~filters.forwarded
     & ~filters.via_bot
 )
@@ -109,40 +119,17 @@ async def executor(client: Client, message: Message):
         await edit_or_reply(message, text=final_output, reply_markup=keyboard)
 
 
-@app.on_callback_query(filters.regex(r"runtime"))
-async def runtime_func_cq(_, cq):
-    runtime = cq.data.split(None, 1)[1]
-    await cq.answer(runtime, show_alert=True)
-
-
-@app.on_callback_query(filters.regex("forceclose"))
-async def forceclose_command(_, CallbackQuery):
-    callback_data = CallbackQuery.data.strip()
-    callback_request = callback_data.split(None, 1)[1]
-    query, user_id = callback_request.split("|")
-    if CallbackQuery.from_user.id != int(user_id):
-        try:
-            return await CallbackQuery.answer(
-                "» ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
-            )
-        except:
-            return
-    await CallbackQuery.message.delete()
-    try:
-        await CallbackQuery.answer()
-    except:
-        return
-
-
 @app.on_edited_message(
     filters.command("sh")
     & filters.user(OWNER_ID)
+    & filters.create(private_and_owner)
     & ~filters.forwarded
     & ~filters.via_bot
 )
 @app.on_message(
     filters.command("sh")
     & filters.user(OWNER_ID)
+    & filters.create(private_and_owner)
     & ~filters.forwarded
     & ~filters.via_bot
 )
@@ -208,3 +195,28 @@ async def shellrunner(_, message: Message):
         await edit_or_reply(message, text=f"<b>OUTPUT :</b>\n<pre>{output}</pre>")
 
     await message.stop_propagation()
+
+
+@app.on_callback_query(filters.regex(r"runtime"))
+async def runtime_func_cq(_, cq):
+    runtime = cq.data.split(None, 1)[1]
+    await cq.answer(runtime, show_alert=True)
+
+
+@app.on_callback_query(filters.regex("forceclose"))
+async def forceclose_command(_, CallbackQuery):
+    callback_data = CallbackQuery.data.strip()
+    callback_request = callback_data.split(None, 1)[1]
+    query, user_id = callback_request.split("|")
+    if CallbackQuery.from_user.id != int(user_id):
+        try:
+            return await CallbackQuery.answer(
+                "» ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
+            )
+        except:
+            return
+    await CallbackQuery.message.delete()
+    try:
+        await CallbackQuery.answer()
+    except:
+        return
