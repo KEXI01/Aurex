@@ -6,11 +6,15 @@ import httpx
 import yt_dlp
 import asyncio
 import aiofiles
+from config import API_URL
+
+from pyrogram.types import Message
+from pyrogram.enums import MessageEntityType
 from typing import Dict, List, Optional, Tuple, Union
 from youtubesearchpython.__future__ import VideosSearch
 
 from Opus.utils.database import is_on_off
-from Opus.utils.formatters import time_to_seconds
+from Opus.utils.formatters import time_to_seconds, seconds_to_min
 from Opus.utils.downloader import (
     download_audio,
     download_video,
@@ -61,60 +65,72 @@ class YouTubeAPI:
     def __init__(self) -> None:
         self.base_url = "https://www.youtube.com/watch?v="
         self.playlist_url = "https://youtube.com/playlist?list="
-        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be|music\.youtube\.com)")
+        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be)")
 
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
             link = self.base_url + videoid.strip()
-        
-        if "music.youtube.com" in link:
-            link = link.replace("music.youtube.com", "youtube.com")
-
         if "youtu.be" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
         elif "youtube.com/shorts/" in link or "youtube.com/live/" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
-            
         return link.split("&")[0]
 
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
 
-    async def url(self, message) -> Optional[str]:
+    async def url(self, message: Message) -> Optional[str]:
         msgs = [message] + ([message.reply_to_message] if message.reply_to_message else [])
         for msg in msgs:
             text = msg.text or msg.caption or ""
             entities = msg.entities or msg.caption_entities or []
             for ent in entities:
-                if ent.type == 1:  # MessageEntityType.URL
+                if ent.type == MessageEntityType.URL:
                     return text[ent.offset : ent.offset + ent.length]
-                if getattr(ent, "url", None):
+                if ent.type == MessageEntityType.TEXT_LINK:
                     return ent.url
         return None
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
-        q = (query or "").strip()
-        vid = None
+        prepared = self._prepare_link(query)
         try:
-            m = re.search(r"(?:v=|youtu\.be/|/shorts/|/live/)([A-Za-z0-9_-]{6,})", q)
-            if m:
-                vid = m.group(1)
+            data = await VideosSearch(prepared, limit=1).next()
+            result = data.get("result", [])
+            if result:
+                info = result[0]
+                info["webpage_url"] = self.base_url + info.get("id", "")
+                if "thumbnails" not in info or not info.get("thumbnails"):
+                    info["thumbnails"] = [{"url": info.get("thumbnail", "")}]
+                return info
         except Exception:
-            vid = None
-        search_terms = [vid, q] if vid else [q]
-        last_exc = None
-        for term in search_terms:
-            if not term:
-                continue
+            pass
+        if self._url_pattern.search(prepared):
+            stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
+            if not stdout:
+                return None
             try:
-                data = await VideosSearch(term, limit=1).next()
+                info = json.loads(stdout.decode())
+                if isinstance(info.get("duration"), int):
+                    info["duration"] = seconds_to_min(info["duration"]) if info.get("duration") else None
+                if "thumbnails" not in info:
+                    info["thumbnails"] = [{"url": info.get("thumbnail", "")}]
+                info["webpage_url"] = info.get("webpage_url", prepared)
+                return info
+            except json.JSONDecodeError:
+                return None
+        else:
+            try:
+                data = await VideosSearch(prepared, limit=1).next()
                 result = data.get("result", [])
-                if result:
-                    return result[0]
-            except Exception as e:
-                last_exc = e
-                continue
-        return None
+                if not result:
+                    return None
+                info = result[0]
+                info["webpage_url"] = self.base_url + info.get("id", "")
+                if "thumbnails" not in info or not info.get("thumbnails"):
+                    info["thumbnails"] = [{"url": info.get("thumbnail", "")}]
+                return info
+            except Exception:
+                return None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -163,10 +179,6 @@ class YouTubeAPI:
     async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
         if videoid:
             link = self.playlist_url + str(videoid)
-        
-        if "music.youtube.com" in link:
-            link = link.replace("music.youtube.com", "youtube.com")
-
         link = link.split("&")[0]
         stdout, _ = await _exec_proc(
             "yt-dlp",
@@ -183,26 +195,15 @@ class YouTubeAPI:
         return [i for i in items if i]
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
-        prepared = self._prepare_link(link, videoid)
-        info = None
-        try:
-            info = await self._fetch_video_info(prepared)
-            if not info:
-                raise ValueError("No result from API")
-        except Exception:
-            stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
-            if not stdout:
-                raise ValueError("Track not found (yt-dlp fallback)")
-            try:
-                info = json.loads(stdout.decode())
-            except json.JSONDecodeError:
-                raise ValueError("Failed to parse yt-dlp output")
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        if not info:
+            raise ValueError("Track not found")
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
         details = {
             "title": info.get("title", ""),
-            "link": info.get("webpage_url", prepared),
+            "link": info.get("webpage_url", self._prepare_link(link, videoid)),
             "vidid": info.get("id", ""),
-            "duration_min": info.get("duration") if isinstance(info.get("duration"), str) else None,
+            "duration_min": info.get("duration"),
             "thumb": thumb,
         }
         return details, info.get("id", "")
