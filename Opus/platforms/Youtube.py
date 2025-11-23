@@ -65,20 +65,15 @@ class YouTubeAPI:
     def __init__(self) -> None:
         self.base_url = "https://www.youtube.com/watch?v="
         self.playlist_url = "https://youtube.com/playlist?list="
-        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be|music\.youtube\.com)")
+        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be)")
 
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
             link = self.base_url + videoid.strip()
-        
-        if "music.youtube.com" in link:
-            link = link.replace("music.youtube.com", "youtube.com")
-
         if "youtu.be" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
         elif "youtube.com/shorts/" in link or "youtube.com/live/" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
-            
         return link.split("&")[0]
 
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
@@ -98,12 +93,9 @@ class YouTubeAPI:
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
         q = self._prepare_link(query)
-        try:
-            data = await VideosSearch(q, limit=1).next()
-            result = data.get("result", [])
-            return result[0] if result else None
-        except Exception:
-            return None
+        data = await VideosSearch(q, limit=1).next()
+        result = data.get("result", [])
+        return result[0] if result else None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -152,10 +144,6 @@ class YouTubeAPI:
     async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
         if videoid:
             link = self.playlist_url + str(videoid)
-        
-        if "music.youtube.com" in link:
-            link = link.replace("music.youtube.com", "youtube.com")
-
         link = link.split("&")[0]
         stdout, _ = await _exec_proc(
             "yt-dlp",
@@ -172,26 +160,20 @@ class YouTubeAPI:
         return [i for i in items if i]
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
-        prepared = self._prepare_link(link, videoid)
         try:
-            # Try Future Search First
-            info = await self._fetch_video_info(prepared)
+            info = await self._fetch_video_info(self._prepare_link(link, videoid))
             if not info:
                 raise ValueError("Track not found via API")
         except Exception:
-            # Fallback to DLP
+            prepared = self._prepare_link(link, videoid)
             stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
             if not stdout:
                 raise ValueError("Track not found (yt-dlp fallback)")
-            try:
-                info = json.loads(stdout.decode())
-            except json.JSONDecodeError:
-                raise ValueError("Failed to parse yt-dlp output")
-        
+            info = json.loads(stdout.decode())
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
         details = {
             "title": info.get("title", ""),
-            "link": info.get("webpage_url", prepared),
+            "link": info.get("webpage_url", self._prepare_link(link, videoid)),
             "vidid": info.get("id", ""),
             "duration_min": info.get("duration") if isinstance(info.get("duration"), str) else None,
             "thumb": thumb,
@@ -270,7 +252,7 @@ class YouTubeAPI:
                 if status == 1:
                     return stream_url, None
                 raise ValueError("Unable to fetch live stream link")
-            p = await download_video(link, quality=1080)
+            p = await download_video(link, quality=720)
             return (p, True) if p else (None, None)
 
         p = await download_audio(link)
