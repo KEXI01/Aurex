@@ -6,10 +6,6 @@ import httpx
 import yt_dlp
 import asyncio
 import aiofiles
-from config import API_URL
-
-from pyrogram.types import Message
-from pyrogram.enums import MessageEntityType
 from typing import Dict, List, Optional, Tuple, Union
 from youtubesearchpython.__future__ import VideosSearch
 
@@ -26,6 +22,7 @@ COOKIE_PATH = "Opus/assets/cookies.txt"
 DOWNLOAD_DIR = "downloads"
 CHUNK_SIZE = 8 * 1024 * 1024
 
+
 def _cookiefile_path() -> Optional[str]:
     path = str(COOKIE_PATH)
     try:
@@ -35,9 +32,11 @@ def _cookiefile_path() -> Optional[str]:
         pass
     return None
 
+
 def _cookies_args() -> List[str]:
     p = _cookiefile_path()
     return ["--cookies", p] if p else []
+
 
 async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(
@@ -45,8 +44,10 @@ async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
     )
     return await proc.communicate()
 
-def safe_filename(name: str) -> str:
-    return re.sub(r'[\/*?:"<>|]+', "", (name or "").strip())[:200]
+
+def _safe_filename(name: str) -> str:
+    return re.sub(r'[\\/*?:"<>|]+', "_", (name or "").strip())[:200]
+
 
 async def _http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
@@ -55,11 +56,12 @@ async def _http_client() -> httpx.AsyncClient:
         follow_redirects=True,
     )
 
+
 class YouTubeAPI:
     def __init__(self) -> None:
         self.base_url = "https://www.youtube.com/watch?v="
         self.playlist_url = "https://youtube.com/playlist?list="
-        self._url_pattern = re.compile(r"(?:youtube.com|youtu.be|music.youtube.com)")
+        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be|music\.youtube\.com)")
 
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
@@ -72,21 +74,21 @@ class YouTubeAPI:
             link = self.base_url + link.split("/")[-1].split("?")[0]
         elif "youtube.com/shorts/" in link or "youtube.com/live/" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
-              
+            
         return link.split("&")[0]
 
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
 
-    async def url(self, message: Message) -> Optional[str]:
+    async def url(self, message) -> Optional[str]:
         msgs = [message] + ([message.reply_to_message] if message.reply_to_message else [])
         for msg in msgs:
             text = msg.text or msg.caption or ""
             entities = msg.entities or msg.caption_entities or []
             for ent in entities:
-                if ent.type == MessageEntityType.URL:
+                if ent.type == 1:  # MessageEntityType.URL
                     return text[ent.offset : ent.offset + ent.length]
-                if ent.type == MessageEntityType.TEXT_LINK:
+                if getattr(ent, "url", None):
                     return ent.url
         return None
 
@@ -161,7 +163,7 @@ class YouTubeAPI:
     async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
         if videoid:
             link = self.playlist_url + str(videoid)
-          
+        
         if "music.youtube.com" in link:
             link = link.replace("music.youtube.com", "youtube.com")
 
@@ -261,21 +263,17 @@ class YouTubeAPI:
         format_id: Union[bool, str, None] = None,
         title: Union[bool, str, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
-        print(f"DEBUG: Starting download for link: {link}")
         link = self._prepare_link(link, videoid)
 
         if songvideo:
-            print(f"DEBUG: Downloading song video with format {format_id} title {title}")
             p = await download_song_video(link, format_id, title)
             return (p, True) if p else (None, None)
 
         if songaudio:
-            print(f"DEBUG: Downloading song audio with format {format_id} title {title}")
             p = await download_song_audio(link, format_id, title)
             return (p, True) if p else (None, None)
 
         if video:
-            print(f"DEBUG: Downloading video")
             if await self.is_live(link):
                 status, stream_url = await self.video(link)
                 if status == 1:
@@ -284,6 +282,5 @@ class YouTubeAPI:
             p = await download_video(link, quality=1080)
             return (p, True) if p else (None, None)
 
-        print(f"DEBUG: Downloading audio")
         p = await download_audio(link)
         return (p, True) if p else (None, None)
