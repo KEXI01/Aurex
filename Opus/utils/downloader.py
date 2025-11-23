@@ -13,7 +13,7 @@ from config import API_URL
 DOWNLOAD_DIR = "downloads"
 CACHE_DIR = "cache"
 COOKIE_PATH = "Opus/assets/cookies.txt"
-CHUNK_SIZE = 8 * 1024 * 1024
+CHUNK_SIZE = 12 * 1024 * 1024
 USE_API = True
 
 _client: Optional[httpx.AsyncClient] = None
@@ -147,12 +147,12 @@ async def api_download_video(video_id: str, quality: str = "360", wait_timeout: 
     backoff = 1.0
     while time.time() - start < wait_timeout:
         try:
-            data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=30.0)
+            data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=60.0)
             if data:
                 dl_url = data.get("downloadUrl") or data.get("url") or data.get("download_url")
                 if dl_url:
                     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp4"
-                    ok = await _stream_download(dl_url, out_path, timeout=160.0)
+                    ok = await _stream_download(dl_url, out_path, timeout=120.0)
                     return out_path if ok else None
         except Exception:
             pass
@@ -224,13 +224,13 @@ async def download_audio(link: str) -> Optional[str]:
     return await run()
 
 
-async def download_video(link: str, quality: int = 720) -> Optional[str]:
+async def download_video(link: str, quality: int = 360) -> Optional[str]:
     video_id = extract_video_id(link)
     if cached := file_exists(video_id, "mp4"):
         return cached
 
     async def run():
-        api_result = await api_download_video(video_id, f"{quality}p", wait_timeout=160.0)
+        api_result = await api_download_video(video_id, f"{quality}", wait_timeout=160.0)
         if api_result and os.path.exists(api_result):
             return api_result
         height = min(quality, 1080)
