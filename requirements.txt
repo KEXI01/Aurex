@@ -25,7 +25,7 @@ unidecode
 uvloop
 git+https://github.com/yt-dlp/yt-dlp.git@master
 youtube-search
-git+https://github.com/BillaSpace/youtube-search-python
+git+https://github.com/BillaSpace/youtube-search-python.git
 Flask
 Flask-RESTful
 pymongo
