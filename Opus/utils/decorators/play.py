@@ -109,8 +109,12 @@ def PlayWrapper(command):
                 if not admins or message.from_user.id not in admins:
                     return await safe_reply(message, _["play_4"])
 
-            is_video = True if (message.command[0][0] == "v" or "-v" in message.text or (len(message.command[0]) > 1 and message.command[0][1] == "v")) else None
-            fplay = True if message.command[0][-1] == "e" else None
+            cmd = (message.command[0] if message.command else "").lstrip("/.!").lower()
+            video_cmds = {"vplay", "cvplay", "vplayforce", "cvplayforce"}
+            channel_cmds = {"cplay", "cvplay", "cplayforce", "cvplayforce"}
+            force_cmds = {"playforce", "vplayforce", "cplayforce", "cvplayforce"}
+            is_video = True if (cmd in video_cmds or "-v" in (message.text or "").lower()) else None
+            fplay = True if cmd in force_cmds else None
 
             try:
                 bot_member = await app.get_chat_member(chat_id, (await app.get_me()).id)
