@@ -280,7 +280,7 @@ class YouTubeAPI:
                 if status == 1:
                     return stream_url, None
                 raise ValueError("Unable to fetch live stream link")
-            p = await download_video(link, quality=1080)
+            p = await download_video(link, quality=360)
             return (p, True) if p else (None, None)
 
         p = await download_audio(link)
