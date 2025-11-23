@@ -16,6 +16,7 @@ from Opus.utils.database import (
     music_off,
     music_on,
     set_loop,
+    get_thumb_setting,
 )
 from Opus.utils.decorators.language import languageCB
 from Opus.utils.formatters import seconds_to_min
@@ -38,6 +39,13 @@ from strings import get_string
 checker = {}
 upvoters = {}
 
+async def delete_after_delay(message, delay=10):
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except:
+        pass
+
 
 @app.on_callback_query(filters.regex("ADMIN") & ~BANNED_USERS)
 @languageCB
@@ -53,6 +61,10 @@ async def del_back_playlist(client, CallbackQuery, _):
     if not await is_active_chat(chat_id):
         return await CallbackQuery.answer(_["general_5"], show_alert=True)
     mention = CallbackQuery.from_user.mention
+    
+    # Check thumbnail setting
+    thumb_mode = await get_thumb_setting(chat_id)
+
     if command == "UpVote":
         if chat_id not in votemode:
             votemode[chat_id] = {}
@@ -137,30 +149,42 @@ async def del_back_playlist(client, CallbackQuery, _):
         await CallbackQuery.answer()
         await music_off(chat_id)
         await Signal.pause_stream(chat_id)
-        await CallbackQuery.message.reply_text(
+        sent_msg = await CallbackQuery.message.reply_text(
             _["admin_2"].format(mention), reply_markup=close_markup(_)
         )
+        asyncio.create_task(delete_after_delay(sent_msg))
     elif command == "Resume":
         if await is_music_playing(chat_id):
             return await CallbackQuery.answer(_["admin_3"], show_alert=True)
         await CallbackQuery.answer()
         await music_on(chat_id)
         await Signal.resume_stream(chat_id)
-        await CallbackQuery.message.reply_text(
+        sent_msg = await CallbackQuery.message.reply_text(
             _["admin_4"].format(mention), reply_markup=close_markup(_)
         )
+        asyncio.create_task(delete_after_delay(sent_msg))
     elif command == "Stop" or command == "End":
         await CallbackQuery.answer()
         await Signal.stop_stream(chat_id)
         await set_loop(chat_id, 0)
-        await CallbackQuery.message.reply_text(
+        
+        # Stream Message Cleanup: Delete stream photo/caption message
+        if chat_id in db and db[chat_id][0].get("mystic"):
+            try:
+                await db[chat_id][0]["mystic"].delete()
+            except:
+                pass
+        
+        sent_msg = await CallbackQuery.message.reply_text(
             _["admin_5"].format(mention), reply_markup=close_markup(_)
         )
+        asyncio.create_task(delete_after_delay(sent_msg))
+        
         await CallbackQuery.message.delete()
     elif command == "Skip" or command == "Replay":
         check = db.get(chat_id)
         if command == "Skip":
-            txt = f"➻ sᴛʀᴇᴀᴍ sᴋɪᴩᴩᴇᴅ 🎄\n│ \n└ʙʏ : {mention} 🥀"
+            txt = f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
             popped = None
             try:
                 popped = check.pop(0)
@@ -168,14 +192,24 @@ async def del_back_playlist(client, CallbackQuery, _):
                     await auto_clean(popped)
                 if not check:
                     await CallbackQuery.edit_message_text(
-                        f"➻ sᴛʀᴇᴀᴍ sᴋɪᴩᴩᴇᴅ 🎄\n│ \n└ʙʏ : {mention} 🥀"
+                        f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
                     )
-                    await CallbackQuery.message.reply_text(
+                    sent_msg = await CallbackQuery.message.reply_text(
                         text=_["admin_6"].format(
                             mention, CallbackQuery.message.chat.title
                         ),
                         reply_markup=close_markup(_),
                     )
+                    asyncio.create_task(delete_after_delay(sent_msg))
+                    
+                    # Stream Message Cleanup: Delete stream photo/caption 
+
+                    if chat_id in db and db[chat_id][0].get("mystic"):
+                        try:
+                            await db[chat_id][0]["mystic"].delete()
+                        except:
+                            pass
+                            
                     try:
                         return await Signal.stop_stream(chat_id)
                     except:
@@ -183,19 +217,36 @@ async def del_back_playlist(client, CallbackQuery, _):
             except:
                 try:
                     await CallbackQuery.edit_message_text(
-                        f"➻ sᴛʀᴇᴀᴍ sᴋɪᴩᴩᴇᴅ 🎄\n│ \n└ʙʏ : {mention} 🥀"
+                        f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} ≤"
                     )
-                    await CallbackQuery.message.reply_text(
+                    sent_msg = await CallbackQuery.message.reply_text(
                         text=_["admin_6"].format(
                             mention, CallbackQuery.message.chat.title
                         ),
                         reply_markup=close_markup(_),
                     )
+                    asyncio.create_task(delete_after_delay(sent_msg))
+                    
+                    # Stream Message Cleanup: Delete stream photo/caption message
+                    if chat_id in db and db[chat_id][0].get("mystic"):
+                        try:
+                            await db[chat_id][0]["mystic"].delete()
+                        except:
+                            pass
+                            
                     return await Signal.stop_stream(chat_id)
                 except:
                     return
         else:
-            txt = f"➻ sᴛʀᴇᴀᴍ ʀᴇ-ᴘʟᴀʏᴇᴅ 🎄\n│ \n└ʙʏ : {mention} 🥀"
+            txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} 🛸"
+            
+        # Stream Message Cleanup: Delete current stream message before playing new one
+        if chat_id in db and db[chat_id][0].get("mystic"):
+            try:
+                await db[chat_id][0]["mystic"].delete()
+            except:
+                pass
+                
         await CallbackQuery.answer()
         queued = check[0]["file"]
         title = (check[0]["title"]).title()
@@ -211,6 +262,12 @@ async def del_back_playlist(client, CallbackQuery, _):
             db[chat_id][0]["seconds"] = check[0]["old_second"]
             db[chat_id][0]["speed_path"] = None
             db[chat_id][0]["speed"] = 1.0
+            
+        
+        # --- Stream Display Logic (with Thumbnail Check) ---
+        
+        button = stream_markup(_, chat_id)
+        
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
             if n == 0:
@@ -226,34 +283,43 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, link, video=status, image=image)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-            button = stream_markup(_, chat_id)
-            img = await get_thumb(videoid)
-            run = await CallbackQuery.message.reply_photo(
-                photo=img,
-                caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{videoid}",
-                    title[:23],
-                    duration,
-                    user,
-                ),
-                reply_markup=InlineKeyboardMarkup(button),
+            
+            caption_text = _["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                duration,
+                user,
             )
+            if thumb_mode:
+                img = await get_thumb(videoid)
+                run = await CallbackQuery.message.reply_photo(
+                    photo=img,
+                    caption=caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            else:
+                run = await CallbackQuery.message.reply_text(
+                    caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                    disable_web_page_preview=True,
+                )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            
         elif "vid_" in queued:
-            mystic = await CallbackQuery.message.reply_text(
+            mystic_dl = await CallbackQuery.message.reply_text(
                 _["call_7"], disable_web_page_preview=True
             )
             try:
                 file_path, direct = await YouTube.download(
                     videoid,
-                    mystic,
+                    mystic_dl,
                     videoid=True,
                     video=status,
                 )
             except:
-                return await mystic.edit_text(_["call_6"])
+                return await mystic_dl.edit_text(_["call_6"])
             try:
                 image = await YouTube.thumbnail(videoid, True)
             except:
@@ -261,37 +327,55 @@ async def del_back_playlist(client, CallbackQuery, _):
             try:
                 await Signal.skip_stream(chat_id, file_path, video=status, image=image)
             except:
-                return await mystic.edit_text(_["call_6"])
-            button = stream_markup(_, chat_id)
-            img = await get_thumb(videoid)
-            run = await CallbackQuery.message.reply_photo(
-                photo=img,
-                caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{videoid}",
-                    title[:23],
-                    duration,
-                    user,
-                ),
-                reply_markup=InlineKeyboardMarkup(button),
+                return await mystic_dl.edit_text(_["call_6"])
+            
+            caption_text = _["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                duration,
+                user,
             )
+            if thumb_mode:
+                img = await get_thumb(videoid)
+                run = await CallbackQuery.message.reply_photo(
+                    photo=img,
+                    caption=caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            else:
+                run = await CallbackQuery.message.reply_text(
+                    caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                    disable_web_page_preview=True,
+                )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
-            await mystic.delete()
+            await mystic_dl.delete()
+            
         elif "index_" in queued:
             try:
                 await Signal.skip_stream(chat_id, videoid, video=status)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-            button = stream_markup(_, chat_id)
-            run = await CallbackQuery.message.reply_photo(
-                photo=STREAM_IMG_URL,
-                caption=_["stream_2"].format(user),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
+            
+            caption_text = _["stream_2"].format(user)
+            if thumb_mode:
+                run = await CallbackQuery.message.reply_photo(
+                    photo=STREAM_IMG_URL,
+                    caption=caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            else:
+                run = await CallbackQuery.message.reply_text(
+                    caption_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                    disable_web_page_preview=True,
+                )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            
         else:
             if videoid == "telegram":
                 image = None
@@ -306,45 +390,67 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, queued, video=status, image=image)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
+                
             if videoid == "telegram":
-                button = stream_markup(_, chat_id)
-                run = await CallbackQuery.message.reply_photo(
-                    photo=TELEGRAM_AUDIO_URL
-                    if str(streamtype) == "audio"
-                    else TELEGRAM_VIDEO_URL,
-                    caption=_["stream_1"].format(
-                        config.SUPPORT_CHAT, title[:23], duration, user
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption_text = _["stream_1"].format(
+                    config.SUPPORT_CHAT, title[:23], duration, user
                 )
+                if thumb_mode:
+                    run = await CallbackQuery.message.reply_photo(
+                        photo=TELEGRAM_AUDIO_URL
+                        if str(streamtype) == "audio"
+                        else TELEGRAM_VIDEO_URL,
+                        caption=caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                else:
+                    run = await CallbackQuery.message.reply_text(
+                        caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                        disable_web_page_preview=True,
+                    )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
             elif videoid == "soundcloud":
-                button = stream_markup(_, chat_id)
-                run = await CallbackQuery.message.reply_photo(
-                    photo=SOUNCLOUD_IMG_URL
-                    if str(streamtype) == "audio"
-                    else TELEGRAM_VIDEO_URL,
-                    caption=_["stream_1"].format(
-                        SUPPORT_CHAT, title[:23], duration, user
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption_text = _["stream_1"].format(
+                    SUPPORT_CHAT, title[:23], duration, user
                 )
+                if thumb_mode:
+                    run = await CallbackQuery.message.reply_photo(
+                        photo=SOUNCLOUD_IMG_URL
+                        if str(streamtype) == "audio"
+                        else TELEGRAM_VIDEO_URL,
+                        caption=caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                else:
+                    run = await CallbackQuery.message.reply_text(
+                        caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                        disable_web_page_preview=True,
+                    )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
             else:
-                button = stream_markup(_, chat_id)
-                img = await get_thumb(videoid)
-                run = await CallbackQuery.message.reply_photo(
-                    photo=img,
-                    caption=_["stream_1"].format(
-                        f"https://t.me/{app.username}?start=info_{videoid}",
-                        title[:23],
-                        duration,
-                        user,
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption_text = _["stream_1"].format(
+                    f"https://t.me/{app.username}?start=info_{videoid}",
+                    title[:23],
+                    duration,
+                    user,
                 )
+                if thumb_mode:
+                    img = await get_thumb(videoid)
+                    run = await CallbackQuery.message.reply_photo(
+                        photo=img,
+                        caption=caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                else:
+                    run = await CallbackQuery.message.reply_text(
+                        caption_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                        disable_web_page_preview=True,
+                    )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
