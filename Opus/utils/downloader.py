@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import os
 import re
+import time
 from typing import Dict, Optional, Union
 
 import aiofiles
@@ -20,19 +21,21 @@ _inflight_lock = asyncio.Lock()
 _client: Optional[httpx.AsyncClient] = None
 _client_lock = asyncio.Lock()
 
+
 def extract_video_id(link: str) -> str:
     if "v=" in link:
         return link.split("v=")[-1].split("&")[0]
-    m = re.search(r"youtu.be/([A-Za-z0-9_-]{6,})", link)
+    m = re.search(r"youtu\.be/([A-Za-z0-9_\-]{6,})", link)
     if m:
         return m.group(1)
-    m = re.search(r"youtube.com/shorts/([A-Za-z0-9_-]{6,})", link)
+    m = re.search(r"youtube\.com/shorts/([A-Za-z0-9_\-]{6,})", link)
     if m:
         return m.group(1)
-    m = re.search(r"youtube.com/embed/([A-Za-z0-9_-]{6,})", link)
+    m = re.search(r"youtube\.com/embed/([A-Za-z0-9_\-]{6,})", link)
     if m:
         return m.group(1)
     return link.split("/")[-1].split("?")[0]
+
 
 def _cookiefile_path() -> Optional[str]:
     try:
@@ -42,6 +45,7 @@ def _cookiefile_path() -> Optional[str]:
         pass
     return None
 
+
 def file_exists(video_id: str, ext: str = None) -> Optional[str]:
     exts = [ext] if ext else ("mp3", "m4a", "webm", "mp4")
     for e in exts:
@@ -50,8 +54,10 @@ def file_exists(video_id: str, ext: str = None) -> Optional[str]:
             return path
     return None
 
-def safe_filename(name: str) -> str:
-    return re.sub(r'[\/*?:"<>|]+', "", (name or "").strip())[:200]
+
+def _safe_filename(name: str) -> str:
+    return re.sub(r'[\\/*?:"<>|]+', "_", (name or "").strip())[:200]
+
 
 def _ytdlp_base_opts() -> Dict[str, Union[str, int, bool]]:
     opts = {
@@ -73,6 +79,7 @@ def _ytdlp_base_opts() -> Dict[str, Union[str, int, bool]]:
         opts["cookiefile"] = cookiefile
     return opts
 
+
 async def _get_client() -> httpx.AsyncClient:
     global _client
     if _client and not _client.is_closed:
@@ -86,25 +93,31 @@ async def _get_client() -> httpx.AsyncClient:
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        return _client
+    return _client
+
 
 async def _api_fetch_json(path: str, params: dict | None = None, timeout: float = 30.0) -> Optional[dict]:
     if not USE_API or not API_URL:
         return None
     try:
         client = await _get_client()
-        backoff = 0.2
-        for _ in range(1):
+        backoff = 0.5
+        for _ in range(3):
             r = await client.get(f"{API_URL.rstrip('/')}{path}", params=params, timeout=timeout)
             if r.status_code == 200:
-                return r.json()
+                try:
+                    return r.json()
+                except Exception:
+                    return None
             if r.status_code >= 500:
                 await asyncio.sleep(backoff)
-                backoff *= 2
+                backoff = min(backoff * 2, 5.0)
                 continue
-        return None
+            return None
     except Exception:
         return None
+    return None
+
 
 async def _stream_download(url: str, out_path: str, timeout: float) -> bool:
     try:
@@ -121,47 +134,39 @@ async def _stream_download(url: str, out_path: str, timeout: float) -> bool:
     except Exception:
         return False
 
+
 async def api_download_audio(video_id: str) -> Optional[str]:
-    print(f"DEBUG: Fetching audio API for {video_id}")
     data = await _api_fetch_json("/mp3", {"id": video_id}, timeout=30.0)
-    print(f"DEBUG: API audio data: {data}")
     if not data:
-        print("DEBUG: No API audio data")
         return None
     dl_url = data.get("downloadUrl") or data.get("url") or data.get("download_url")
-    print(f"DEBUG: Audio download URL: {dl_url}")
     if not dl_url:
-        print("DEBUG: No audio download URL")
         return None
     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp3"
-    print("DEBUG: Starting audio stream download")
     ok = await _stream_download(dl_url, out_path, timeout=120.0)
-    if ok:
-        print("DEBUG: Audio download successful")
-    else:
-        print("DEBUG: Audio download failed")
     return out_path if ok else None
 
-async def api_download_video(video_id: str, quality: str = "720p") -> Optional[str]:
-    print(f"DEBUG: Fetching video API for {video_id} quality {quality}")
-    data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=30.0)
-    print(f"DEBUG: API video data: {data}")
-    if not data:
-        print("DEBUG: No API video data")
+
+async def api_download_video(video_id: str, quality: str = "720p", wait_timeout: float = 190.0) -> Optional[str]:
+    if not USE_API or not API_URL:
         return None
-    dl_url = data.get("downloadUrl") or data.get("url") or data.get("download_url")
-    print(f"DEBUG: Video download URL: {dl_url}")
-    if not dl_url:
-        print("DEBUG: No video download URL")
-        return None
-    out_path = f"{DOWNLOAD_DIR}/{video_id}.mp4"
-    print("DEBUG: Starting video stream download")
-    ok = await _stream_download(dl_url, out_path, timeout=300.0)
-    if ok:
-        print("DEBUG: Video download successful")
-    else:
-        print("DEBUG: Video download failed")
-    return out_path if ok else None
+    start = time.time()
+    backoff = 1.0
+    while time.time() - start < wait_timeout:
+        try:
+            data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=20.0)
+            if data:
+                dl_url = data.get("downloadUrl") or data.get("url") or data.get("download_url")
+                if dl_url:
+                    out_path = f"{DOWNLOAD_DIR}/{video_id}.mp4"
+                    ok = await _stream_download(dl_url, out_path, timeout=300.0)
+                    return out_path if ok else None
+        except Exception:
+            pass
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 1.5, 5.0)
+    return None
+
 
 def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
     try:
@@ -179,9 +184,11 @@ def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
     except Exception:
         return None
 
+
 async def _run_ytdlp(link: str, opts: dict) -> Optional[str]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _download_ytdlp_sync, link, opts)
+
 
 async def _dedup(key: str, runner):
     async with _inflight_lock:
@@ -199,6 +206,7 @@ async def _dedup(key: str, runner):
     finally:
         async with _inflight_lock:
             _inflight.pop(key, None)
+
 
 async def download_audio(link: str) -> Optional[str]:
     video_id = extract_video_id(link)
@@ -224,6 +232,7 @@ async def download_audio(link: str) -> Optional[str]:
 
     return await _dedup(key, run)
 
+
 async def download_video(link: str, quality: int = 1080) -> Optional[str]:
     video_id = extract_video_id(link)
     if cached := file_exists(video_id, "mp4"):
@@ -231,7 +240,7 @@ async def download_video(link: str, quality: int = 1080) -> Optional[str]:
 
     key = f"video:{video_id}:{quality}"
     async def run():
-        api_result = await api_download_video(video_id, f"{quality}p")
+        api_result = await api_download_video(video_id, f"{quality}p", wait_timeout=190.0)
         if api_result and os.path.exists(api_result):
             return api_result
         height = min(quality, 1080)
@@ -244,8 +253,9 @@ async def download_video(link: str, quality: int = 1080) -> Optional[str]:
 
     return await _dedup(key, run)
 
+
 async def download_song_video(link: str, format_id: str, title: str) -> Optional[str]:
-    safe_title = safe_filename(title)
+    safe_title = _safe_filename(title)
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp4"
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
@@ -253,7 +263,7 @@ async def download_song_video(link: str, format_id: str, title: str) -> Optional
 
     key = f"song_video:{video_id}:{format_id}:{safe_title}"
     async def run():
-        api_vid = await api_download_video(video_id)
+        api_vid = await api_download_video(video_id, quality="1080", wait_timeout=190.0)
         if api_vid and os.path.exists(api_vid):
             os.makedirs(DOWNLOAD_DIR, exist_ok=True)
             final_path = out_path
@@ -271,8 +281,9 @@ async def download_song_video(link: str, format_id: str, title: str) -> Optional
 
     return await _dedup(key, run)
 
+
 async def download_song_audio(link: str, format_id: str, title: str) -> Optional[str]:
-    safe_title = safe_filename(title)
+    safe_title = _safe_filename(title)
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp3"
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
