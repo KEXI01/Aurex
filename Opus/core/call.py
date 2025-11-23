@@ -55,14 +55,29 @@ ELSE_AQ = AudioQuality.HIGH
 ELSE_VQ = VideoQuality.SD_360p
 
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    return MediaStream(
-        audio_path=path,
-        media_path=path,
-        audio_parameters=DEFAULT_AQ if video else ELSE_AQ,
-        video_parameters=DEFAULT_VQ if video else ELSE_VQ,
-        video_flags=(MediaStream.Flags.AUTO_DETECT if video else MediaStream.Flags.IGNORE),
-        ffmpeg_parameters=ffmpeg_params,
-    )
+    # Use Flags if available ; otherwise omit video_flags
+    flags = getattr(MediaStream, "Flags", None)
+    if video:
+        if flags is not None:
+            return MediaStream(
+                path,
+                audio_parameters=DEFAULT_AQ,
+                video_parameters=DEFAULT_VQ,
+                video_flags=(flags.AUTO_DETECT if video else flags.IGNORE),
+                ffmpeg_parameters=ffmpeg_params,
+            )
+        return MediaStream(
+            path,
+            audio_parameters=DEFAULT_AQ,
+            video_parameters=DEFAULT_VQ,
+            ffmpeg_parameters=ffmpeg_params,
+        )
+    else:
+        return MediaStream(
+            path,
+            audio_parameters=ELSE_AQ,
+            ffmpeg_parameters=ffmpeg_params,
+        )
 
 
 async def _clear_(chat_id):
@@ -74,48 +89,28 @@ async def _clear_(chat_id):
     except:
         pass
 
-
 class Call(PyTgCalls):
     def __init__(self):
+        # STRING1 - no_updates=true flag after
         self.userbot1 = Client(
-            name="OpusXAss1",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING1),
-        )
-        self.one = PyTgCalls(self.userbot1, cache_duration=100)
+            "SpaceXAss1", config.API_ID, config.API_HASH, session_string=config.STRING1) if config.STRING1 else None
+        self.one = PyTgCalls(self.userbot1) if self.userbot1 else None
 
         self.userbot2 = Client(
-            name="OpusXAss2",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING2),
-        )
-        self.two = PyTgCalls(self.userbot2, cache_duration=100)
+            "SpaceXAss2", config.API_ID, config.API_HASH, session_string=config.STRING2) if config.STRING2 else None
+        self.two = PyTgCalls(self.userbot2) if self.userbot2 else None
 
         self.userbot3 = Client(
-            name="OpusXAss3",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING3),
-        )
-        self.three = PyTgCalls(self.userbot3, cache_duration=100)
+            "SpaceXAss3", config.API_ID, config.API_HASH, session_string=config.STRING3) if config.STRING3 else None
+        self.three = PyTgCalls(self.userbot3) if self.userbot3 else None
 
         self.userbot4 = Client(
-            name="OpusXAss4",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING4),
-        )
-        self.four = PyTgCalls(self.userbot4, cache_duration=100)
+            "SpaceXAss4", config.API_ID, config.API_HASH, session_string=config.STRING4) if config.STRING4 else None
+        self.four = PyTgCalls(self.userbot4) if self.userbot4 else None
 
         self.userbot5 = Client(
-            name="OpusXAss5",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING5),
-        )
-        self.five = PyTgCalls(self.userbot5, cache_duration=100)
+            "SpaceXAss5", config.API_ID, config.API_HASH, session_string=config.STRING5) if config.STRING5 else None
+        self.five = PyTgCalls(self.userbot5) if self.userbot5 else None    
 
 
     async def pause_stream(self, chat_id: int):
