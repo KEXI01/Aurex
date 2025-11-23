@@ -1,5 +1,3 @@
-# Powered By Team Opus
-
 import asyncio
 import importlib
 
@@ -13,7 +11,6 @@ from Opus.misc import sudo
 from Opus.plugins import ALL_MODULES
 from Opus.utils.database import get_banned_users, get_gbanned
 from config import BANNED_USERS
-
 
 async def init():
     if (
@@ -58,7 +55,6 @@ async def init():
     await app.stop()
     await userbot.stop()
     LOGGER("Opus").info("🌩️ Cʏᴄʟᴇ Cʟᴏsᴇᴅ » Oᴘᴜs sʟᴇᴇᴘs ᴜɴᴅᴇʀ ᴛʜᴇ sᴛᴏʀᴍ.")
-
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(init())
