@@ -75,27 +75,48 @@ async def _clear_(chat_id):
         pass
 
 
-class Call:
+class Call(PyTgCalls):
     def __init__(self):
         self.userbot1 = Client(
-            "OpusXAss1", config.API_ID, config.API_HASH, session_string=config.STRING1) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1) if self.userbot1 else None
+            name="OpusXAss1",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=str(config.STRING1),
+        )
+        self.one = PyTgCalls(self.userbot1, cache_duration=100)
 
         self.userbot2 = Client(
-            "OpusXAss2", config.API_ID, config.API_HASH, session_string=config.STRING2) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2) if self.userbot2 else None
+            name="OpusXAss2",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=str(config.STRING2),
+        )
+        self.two = PyTgCalls(self.userbot2, cache_duration=100)
 
         self.userbot3 = Client(
-            "OpusXAss3", config.API_ID, config.API_HASH, session_string=config.STRING3) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3) if self.userbot3 else None
+            name="OpusXAss3",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=str(config.STRING3),
+        )
+        self.three = PyTgCalls(self.userbot3, cache_duration=100)
 
         self.userbot4 = Client(
-            "OpusXAss4", config.API_ID, config.API_HASH, session_string=config.STRING4) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4) if self.userbot4 else None
+            name="OpusXAss4",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=str(config.STRING4),
+        )
+        self.four = PyTgCalls(self.userbot4, cache_duration=100)
 
         self.userbot5 = Client(
-            "OpusXAss5", config.API_ID, config.API_HASH, session_string=config.STRING5) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5) if self.userbot5 else None
+            name="OpusXAss5",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=str(config.STRING5),
+        )
+        self.five = PyTgCalls(self.userbot5, cache_duration=100)
+
 
         self.active_calls: set[int] = set()
 
