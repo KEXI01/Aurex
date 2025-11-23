@@ -52,7 +52,6 @@ loop = asyncio.get_event_loop_policy().get_event_loop()
 DEFAULT_AQ = AudioQuality.STUDIO
 DEFAULT_VQ = VideoQuality.FHD_1080p
 ELSE_AQ = AudioQuality.HIGH
-ELSE_VQ = VideoQuality.SD_360p
 
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
     # Use Flags if available ; otherwise omit video_flags
@@ -294,6 +293,7 @@ class Call(PyTgCalls):
         except:
             pass
 
+
     async def join_call(
         self,
         chat_id: int,
@@ -354,6 +354,7 @@ class Call(PyTgCalls):
             else:
                 autoend.pop(chat_id, None)
 
+    
     async def change_stream(self, client, chat_id):
         if chat_id not in db_locks:
             db_locks[chat_id] = asyncio.Lock()
