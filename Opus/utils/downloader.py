@@ -142,7 +142,7 @@ async def api_download_audio(video_id: str) -> Optional[str]:
     return out_path if ok else None
 
 
-async def api_download_video(video_id: str, quality: str = "720p", wait_timeout: float = 160.0) -> Optional[str]:
+async def api_download_video(video_id: str, quality: str = "360", wait_timeout: float = 160.0) -> Optional[str]:
     start = time.time()
     backoff = 1.0
     while time.time() - start < wait_timeout:
@@ -165,15 +165,32 @@ def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
     try:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
         os.makedirs(CACHE_DIR, exist_ok=True)
+        preexisting = set()
+        for root, _, files in os.walk(DOWNLOAD_DIR):
+            for f in files:
+                preexisting.add(os.path.join(root, f))
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(link, download=False)
-            vid = info["id"]
+            vid = info.get("id")
             ext = info.get("ext", "webm")
-            path = f"{DOWNLOAD_DIR}/{vid}.{ext}"
-            if os.path.exists(path) and os.path.getsize(path) > 0:
-                return path
+            expected_by_id = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
+            if os.path.exists(expected_by_id) and os.path.getsize(expected_by_id) > 0:
+                return expected_by_id
             ydl.download([link])
-            return path if os.path.exists(path) and os.path.getsize(path) > 0 else None
+        post = []
+        for root, _, files in os.walk(DOWNLOAD_DIR):
+            for f in files:
+                path = os.path.join(root, f)
+                if path not in preexisting and os.path.getsize(path) > 0:
+                    post.append(path)
+        if len(post) == 1:
+            return post[0]
+        for p in post:
+            if vid and vid in os.path.basename(p):
+                return p
+        if os.path.exists(expected_by_id) and os.path.getsize(expected_by_id) > 0:
+            return expected_by_id
+        return post[0] if post else None
     except Exception:
         return None
 
@@ -188,7 +205,6 @@ async def download_audio(link: str) -> Optional[str]:
     if cached := file_exists(video_id, "mp3"):
         return cached
 
-    key = f"audio:{video_id}"
     async def run():
         api_result = await api_download_audio(video_id)
         if api_result and os.path.exists(api_result):
@@ -208,12 +224,11 @@ async def download_audio(link: str) -> Optional[str]:
     return await run()
 
 
-async def download_video(link: str, quality: int = 1080) -> Optional[str]:
+async def download_video(link: str, quality: int = 720) -> Optional[str]:
     video_id = extract_video_id(link)
     if cached := file_exists(video_id, "mp4"):
         return cached
 
-    key = f"video:{video_id}:{quality}"
     async def run():
         api_result = await api_download_video(video_id, f"{quality}p", wait_timeout=160.0)
         if api_result and os.path.exists(api_result):
@@ -229,14 +244,13 @@ async def download_video(link: str, quality: int = 1080) -> Optional[str]:
     return await run()
 
 
-async def download_song_video(link: str, format_id: str, title: str) -> Optional[str]:
+async def download_song_video(link: str, format_id: Optional[str], title: str) -> Optional[str]:
     safe_title = _safe_filename(title)
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp4"
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
 
-    key = f"song_video:{video_id}:{format_id}:{safe_title}"
     async def run():
         api_vid = await api_download_video(video_id, wait_timeout=160.0)
         if api_vid and os.path.exists(api_vid):
@@ -246,25 +260,31 @@ async def download_song_video(link: str, format_id: str, title: str) -> Optional
                 os.replace(api_vid, final_path)
             return final_path if os.path.exists(final_path) else None
         opts = _ytdlp_base_opts()
-        opts.update({
-            "format": f"{format_id}+140",
-            "outtmpl": out_path,
-            "merge_output_format": "mp4",
-        })
+        if format_id:
+            opts.update({
+                "format": f"{format_id}+140",
+                "outtmpl": out_path,
+                "merge_output_format": "mp4",
+            })
+        else:
+            opts.update({
+                "format": "bestvideo+bestaudio/best",
+                "outtmpl": out_path,
+                "merge_output_format": "mp4",
+            })
         await _run_ytdlp(link, opts)
         return out_path if os.path.exists(out_path) and os.path.getsize(out_path) > 0 else None
 
     return await run()
 
 
-async def download_song_audio(link: str, format_id: str, title: str) -> Optional[str]:
+async def download_song_audio(link: str, format_id: Optional[str], title: str) -> Optional[str]:
     safe_title = _safe_filename(title)
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp3"
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
 
-    key = f"song_audio:{video_id}:{format_id}:{safe_title}"
     async def run():
         api_audio = await api_download_audio(video_id)
         if api_audio and os.path.exists(api_audio):
@@ -274,8 +294,12 @@ async def download_song_audio(link: str, format_id: str, title: str) -> Optional
                 os.replace(api_audio, final_path)
             return final_path if os.path.exists(final_path) else None
         opts = _ytdlp_base_opts()
+        if format_id:
+            fmt = format_id
+        else:
+            fmt = "bestaudio/best"
         opts.update({
-            "format": format_id,
+            "format": fmt,
             "outtmpl": f"{DOWNLOAD_DIR}/{safe_title}.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
