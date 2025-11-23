@@ -118,9 +118,6 @@ class Call(PyTgCalls):
         self.five = PyTgCalls(self.userbot5, cache_duration=100)
 
 
-        self.active_calls: set[int] = set()
-
-    
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         await assistant.pause_stream(chat_id)
