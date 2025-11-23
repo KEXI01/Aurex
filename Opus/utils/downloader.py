@@ -16,8 +16,6 @@ COOKIE_PATH = "Opus/assets/cookies.txt"
 CHUNK_SIZE = 8 * 1024 * 1024
 USE_API = True
 
-_inflight: Dict[str, asyncio.Future] = {}
-_inflight_lock = asyncio.Lock()
 _client: Optional[httpx.AsyncClient] = None
 _client_lock = asyncio.Lock()
 
@@ -101,17 +99,14 @@ async def _api_fetch_json(path: str, params: dict | None = None, timeout: float 
         return None
     try:
         client = await _get_client()
-        backoff = 0.5
-        for _ in range(3):
+        backoff = 0.2
+        for _ in range(1):
             r = await client.get(f"{API_URL.rstrip('/')}{path}", params=params, timeout=timeout)
             if r.status_code == 200:
-                try:
-                    return r.json()
-                except Exception:
-                    return None
+                return r.json()
             if r.status_code >= 500:
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 5.0)
+                backoff *= 2
                 continue
             return None
     except Exception:
@@ -147,19 +142,17 @@ async def api_download_audio(video_id: str) -> Optional[str]:
     return out_path if ok else None
 
 
-async def api_download_video(video_id: str, quality: str = "720p", wait_timeout: float = 190.0) -> Optional[str]:
-    if not USE_API or not API_URL:
-        return None
+async def api_download_video(video_id: str, quality: str = "720p", wait_timeout: float = 160.0) -> Optional[str]:
     start = time.time()
     backoff = 1.0
     while time.time() - start < wait_timeout:
         try:
-            data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=20.0)
+            data = await _api_fetch_json("/video", {"id": video_id, "quality": quality}, timeout=30.0)
             if data:
                 dl_url = data.get("downloadUrl") or data.get("url") or data.get("download_url")
                 if dl_url:
                     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp4"
-                    ok = await _stream_download(dl_url, out_path, timeout=300.0)
+                    ok = await _stream_download(dl_url, out_path, timeout=160.0)
                     return out_path if ok else None
         except Exception:
             pass
@@ -190,24 +183,6 @@ async def _run_ytdlp(link: str, opts: dict) -> Optional[str]:
     return await loop.run_in_executor(None, _download_ytdlp_sync, link, opts)
 
 
-async def _dedup(key: str, runner):
-    async with _inflight_lock:
-        if key in _inflight:
-            return await _inflight[key]
-        fut = asyncio.get_event_loop().create_future()
-        _inflight[key] = fut
-    try:
-        result = await runner()
-        fut.set_result(result)
-        return result
-    except Exception as e:
-        fut.set_exception(e)
-        return None
-    finally:
-        async with _inflight_lock:
-            _inflight.pop(key, None)
-
-
 async def download_audio(link: str) -> Optional[str]:
     video_id = extract_video_id(link)
     if cached := file_exists(video_id, "mp3"):
@@ -230,7 +205,7 @@ async def download_audio(link: str) -> Optional[str]:
         })
         return await _run_ytdlp(link, opts)
 
-    return await _dedup(key, run)
+    return await run()
 
 
 async def download_video(link: str, quality: int = 1080) -> Optional[str]:
@@ -240,7 +215,7 @@ async def download_video(link: str, quality: int = 1080) -> Optional[str]:
 
     key = f"video:{video_id}:{quality}"
     async def run():
-        api_result = await api_download_video(video_id, f"{quality}p", wait_timeout=190.0)
+        api_result = await api_download_video(video_id, f"{quality}p", wait_timeout=160.0)
         if api_result and os.path.exists(api_result):
             return api_result
         height = min(quality, 1080)
@@ -251,7 +226,7 @@ async def download_video(link: str, quality: int = 1080) -> Optional[str]:
         })
         return await _run_ytdlp(link, opts)
 
-    return await _dedup(key, run)
+    return await run()
 
 
 async def download_song_video(link: str, format_id: str, title: str) -> Optional[str]:
@@ -263,7 +238,7 @@ async def download_song_video(link: str, format_id: str, title: str) -> Optional
 
     key = f"song_video:{video_id}:{format_id}:{safe_title}"
     async def run():
-        api_vid = await api_download_video(video_id, quality="1080", wait_timeout=190.0)
+        api_vid = await api_download_video(video_id, wait_timeout=160.0)
         if api_vid and os.path.exists(api_vid):
             os.makedirs(DOWNLOAD_DIR, exist_ok=True)
             final_path = out_path
@@ -279,7 +254,7 @@ async def download_song_video(link: str, format_id: str, title: str) -> Optional
         await _run_ytdlp(link, opts)
         return out_path if os.path.exists(out_path) and os.path.getsize(out_path) > 0 else None
 
-    return await _dedup(key, run)
+    return await run()
 
 
 async def download_song_audio(link: str, format_id: str, title: str) -> Optional[str]:
@@ -311,4 +286,4 @@ async def download_song_audio(link: str, format_id: str, title: str) -> Optional
         await _run_ytdlp(link, opts)
         return out_path if os.path.exists(out_path) and os.path.getsize(out_path) > 0 else None
 
-    return await _dedup(key, run)
+    return await run()
