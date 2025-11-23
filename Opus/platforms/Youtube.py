@@ -97,13 +97,28 @@ class YouTubeAPI:
         return None
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
-        q = self._prepare_link(query)
+        q = (query or "").strip()
+        vid = None
         try:
-            data = await VideosSearch(q, limit=1).next()
-            result = data.get("result", [])
-            return result[0] if result else None
+            m = re.search(r"(?:v=|youtu\.be/|/shorts/|/live/)([A-Za-z0-9_-]{6,})", q)
+            if m:
+                vid = m.group(1)
         except Exception:
-            return None
+            vid = None
+        search_terms = [vid, q] if vid else [q]
+        last_exc = None
+        for term in search_terms:
+            if not term:
+                continue
+            try:
+                data = await VideosSearch(term, limit=1).next()
+                result = data.get("result", [])
+                if result:
+                    return result[0]
+            except Exception as e:
+                last_exc = e
+                continue
+        return None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -173,13 +188,12 @@ class YouTubeAPI:
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
         prepared = self._prepare_link(link, videoid)
+        info = None
         try:
-            # Try Future Search First
             info = await self._fetch_video_info(prepared)
             if not info:
-                raise ValueError("Track not found via API")
+                raise ValueError("No result from API")
         except Exception:
-            # Fallback to DLP
             stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
             if not stdout:
                 raise ValueError("Track not found (yt-dlp fallback)")
@@ -187,7 +201,6 @@ class YouTubeAPI:
                 info = json.loads(stdout.decode())
             except json.JSONDecodeError:
                 raise ValueError("Failed to parse yt-dlp output")
-        
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
         details = {
             "title": info.get("title", ""),
