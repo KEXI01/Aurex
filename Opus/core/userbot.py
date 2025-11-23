@@ -1,10 +1,10 @@
 from pyrogram import Client
+from pyrogram.errors import PeerIdInvalid, RPCError
 import config
 from ..logging import LOGGER
 
 assistants = []
 assistantids = []
-
 
 class Userbot(Client):
     def __init__(self):
@@ -59,10 +59,19 @@ class Userbot(Client):
 
             try:
                 await client.send_message(config.LOGGER_ID, f"✅ Assistant {number} is now online.")
-            except Exception:
+            except PeerIdInvalid:
                 LOGGER(__name__).error(
-                    f"❌ Assistant {number} failed to send a message to the log group. "
-                    f"Ensure it's added and promoted to admin in Logs group ({config.LOGGER_ID})."
+                    f"❌ Assistant {number} failed to send a message to the log group. PeerIdInvalid: The LOGGER_ID ({config.LOGGER_ID}) is invalid or the assistant is not in the group."
+                )
+                exit()
+            except RPCError as e:
+                LOGGER(__name__).error(
+                    f"❌ Assistant {number} failed to send a message to the log group due to RPC error: {e}"
+                )
+                exit()
+            except Exception as e:
+                LOGGER(__name__).error(
+                    f"❌ Assistant {number} failed to verify logging: {e}. Check if it's admin in Logs group ({config.LOGGER_ID})."
                 )
                 exit()
 
