@@ -21,6 +21,7 @@ playtypedb = mongodb.playtypedb
 skipdb = mongodb.skipmode
 sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
+thumbdb = mongodb.thumb
 
 # Shifting to memory [mongo sucks often]
 active = []
@@ -37,6 +38,7 @@ pause = {}
 playmode = {}
 playtype = {}
 skipmode = {}
+thumbmode = {}
 
 
 async def get_assistant_number(chat_id: int) -> str:
@@ -150,6 +152,21 @@ async def group_assistant(self, chat_id: int) -> int:
         return self.four
     elif int(assis) == 5:
         return self.five
+
+
+async def get_thumb_setting(chat_id: int):
+    if chat_id in thumbmode:
+        return thumbmode[chat_id]
+    user = await thumbdb.find_one({"chat_id": chat_id})
+    if user:
+        thumbmode[chat_id] = user.get("value", True)
+        return thumbmode[chat_id]
+    thumbmode[chat_id] = True
+    return True
+
+async def set_thumb_setting(chat_id: int, value: bool):
+    thumbmode[chat_id] = value
+    await thumbdb.update_one({"chat_id": chat_id}, {"$set": {"value": value}}, upsert=True)
 
 
 async def is_skipmode(chat_id: int) -> bool:
