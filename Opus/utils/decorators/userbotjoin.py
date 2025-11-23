@@ -6,6 +6,7 @@ from pyrogram.errors import (
     InviteRequestSent,
     UserAlreadyParticipant,
     UserNotParticipant,
+    RPCError,
 )
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram import Client, filters
@@ -48,13 +49,10 @@ def UserbotWrapper(command):
 
         if not await is_active_chat(chat_id):
             userbot = await get_assistant(chat_id)
+            
             try:
-                try:
-                    get = await app.get_chat_member(chat_id, userbot.id)
-                except ChatAdminRequired:
-                    return await message.reply_text(
-                        "**ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ ᴡɪᴛʜ ɪɴᴠɪᴛᴇ ᴘᴏᴡᴇʀ ᴛᴏ ᴀᴅᴅ ᴍʏ ᴀꜱꜱɪꜱᴛᴀɴᴛ!**"
-                    )
+                get = await app.get_chat_member(chat_id, userbot.id)
+                
                 if (
                     get.status == ChatMemberStatus.BANNED
                     or get.status == ChatMemberStatus.RESTRICTED
@@ -74,17 +72,16 @@ def UserbotWrapper(command):
                             ]
                         ),
                     )
+            except ChatAdminRequired:
+                return await message.reply_text(
+                    "**ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ ᴡɪᴛʜ ɪɴᴠɪᴛᴇ ᴘᴏᴡᴇʀ ᴛᴏ ᴀᴅᴅ ᴍʏ ᴀꜱꜱɪꜱᴛᴀɴᴛ!**"
+                )
             except UserNotParticipant:
-                if message.chat.username:
-                    invitelink = message.chat.username
-                    await userbot.join_chat(invitelink)
-                else:
-                    if chat_id in links:
-                        invitelink = links[chat_id]
-                        try:
-                            await userbot.resolve_peer(invitelink)
-                        except:
-                            pass
+                invitelink = links.get(chat_id)
+
+                if not invitelink:
+                    if message.chat.username:
+                        invitelink = message.chat.username
                     else:
                         try:
                             invitelink = await app.export_chat_invite_link(chat_id)
@@ -94,17 +91,22 @@ def UserbotWrapper(command):
                             )
                         except Exception as e:
                             return await message.reply_text(
-                                f"{app.mention} **ᴀꜱꜱɪꜱᴛᴀɴᴛ ᴊᴏɪɴᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!** ✅"
+                                _["call_3"].format(app.mention, type(e).__name__)
                             )
 
-                if invitelink.startswith("https://t.me/+"):
+                if invitelink and invitelink.startswith("https://t.me/+"):
                     invitelink = invitelink.replace(
                         "https://t.me/+", "https://t.me/joinchat/"
                     )
+                
+                links[chat_id] = invitelink
+
                 myu = await message.reply_text("**ᴀꜱꜱɪꜱᴛᴀɴᴛ ɪꜱ ᴊᴏɪɴɪɴɢ** ⏳")
+                
                 try:
                     await asyncio.sleep(1)
                     await userbot.join_chat(invitelink)
+                    
                     await myu.delete()
                     await message.reply_text(
                         f"{app.mention} **ᴀꜱꜱɪꜱᴛᴀɴᴛ ᴊᴏɪɴᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!** ✅"
@@ -122,19 +124,27 @@ def UserbotWrapper(command):
                         f"{app.mention} **ᴀꜱꜱɪꜱᴛᴀɴᴛ ᴊᴏɪɴᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!** ✅"
                     )
                 except UserAlreadyParticipant:
-                    pass
-                except Exception as e:
+                    await myu.delete()
+                    await message.reply_text(
+                        f"{app.mention} **ᴀꜱꜱɪꜱᴛᴀɴᴛ ɪꜱ ᴀʟʀᴇᴀᴅʏ ɪɴ ᴛʜᴇ ᴄʜᴀᴛ!**"
+                    )
+                except RPCError as e:
+                    await myu.delete()
                     return await message.reply_text(
-                        f"{app.mention} **ᴀꜱꜱɪꜱᴛᴀɴᴛ ᴊᴏɪɴᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!** ✅"
+                        f"{app.mention} **ᴇʀʀᴏʀ ᴊᴏɪɴɪɴɢ ᴀꜱꜱɪꜱᴛᴀɴᴛ:** `{e}`"
+                    )
+                except Exception as e:
+                    await myu.delete()
+                    return await message.reply_text(
+                        _["call_3"].format(app.mention, type(e).__name__)
                     )
 
-                links[chat_id] = invitelink
-
-                try:
-                    await userbot.resolve_peer(chat_id)
-                except:
-                    pass
+            try:
+                await userbot.resolve_peer(chat_id)
+            except:
+                pass
 
         return await command(client, message, _, chat_id)
 
     return wrapper
+    
