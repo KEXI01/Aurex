@@ -7,11 +7,7 @@ import config
 from Opus import Carbon, YouTube, app
 from Opus.core.call import Signal
 from Opus.misc import db
-from Opus.utils.database import (
-    add_active_video_chat,
-    is_active_chat,
-    get_thumb_setting,
-)
+from Opus.utils.database import add_active_video_chat, get_thumb_setting, is_active_chat
 from Opus.utils.exceptions import AssistantErr
 from Opus.utils.inline import aq_markup, close_markup, stream_markup
 from Opus.utils.pastebin import SignalBin
@@ -35,9 +31,8 @@ async def stream(
     if not result:
         return
 
+    # Normalize to strict bool for downstream MediaStream builder
     is_video = bool(video)
-    
-    thumb_mode = await get_thumb_setting(original_chat_id)
 
     if forceplay:
         await Signal.force_stop_stream(chat_id)
@@ -78,13 +73,6 @@ async def stream(
             else:
                 if not forceplay:
                     db[chat_id] = []
-                
-                if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                    try:
-                        await db[original_chat_id][0]["mystic"].delete()
-                    except:
-                        pass
-                        
                 try:
                     file_path, direct = await YouTube.download(
                         vidid, mystic, videoid=True, video=is_video
@@ -110,31 +98,28 @@ async def stream(
                     "video" if is_video else "audio",
                     forceplay=forceplay,
                 )
-                
-                caption_text = _["stream_1"].format(
+                thumb_on = await get_thumb_setting(original_chat_id)
+                button = stream_markup(_, chat_id)
+                caption = _["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
                     duration_min,
                     user_name,
                 )
-                button = stream_markup(_, chat_id)
-                
-                if thumb_mode:
+                if thumb_on:
                     img = await get_thumb(vidid)
                     run = await app.send_photo(
                         original_chat_id,
                         photo=img,
-                        caption=caption_text,
+                        caption=caption,
                         reply_markup=InlineKeyboardMarkup(button),
                     )
                 else:
                     run = await app.send_message(
                         original_chat_id,
-                        text=caption_text,
+                        text=caption,
                         reply_markup=InlineKeyboardMarkup(button),
-                        disable_web_page_preview=True,
                     )
-                
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
 
@@ -192,13 +177,6 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            
-            if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                try:
-                    await db[original_chat_id][0]["mystic"].delete()
-                except:
-                    pass
-                        
             await Signal.join_call(
                 chat_id,
                 original_chat_id,
@@ -218,31 +196,28 @@ async def stream(
                 "video" if is_video else "audio",
                 forceplay=forceplay,
             )
-            
-            caption_text = _["stream_1"].format(
+            thumb_on = await get_thumb_setting(original_chat_id)
+            button = stream_markup(_, chat_id)
+            caption = _["stream_1"].format(
                 f"https://t.me/{app.username}?start=info_{vidid}",
                 title[:23],
                 duration_min,
                 user_name,
             )
-            button = stream_markup(_, chat_id)
-
-            if thumb_mode:
+            if thumb_on:
                 img = await get_thumb(vidid)
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
-                    caption=caption_text,
+                    caption=caption,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_message(
                     original_chat_id,
-                    text=caption_text,
+                    text=caption,
                     reply_markup=InlineKeyboardMarkup(button),
-                    disable_web_page_preview=True,
                 )
-
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
 
@@ -273,13 +248,6 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            
-            if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                try:
-                    await db[original_chat_id][0]["mystic"].delete()
-                except:
-                    pass
-                        
             await Signal.join_call(chat_id, original_chat_id, file_path, video=False)
             await put_queue(
                 chat_id,
@@ -293,27 +261,24 @@ async def stream(
                 "audio",
                 forceplay=forceplay,
             )
-            
-            caption_text = _["stream_1"].format(
+            thumb_on = await get_thumb_setting(original_chat_id)
+            button = stream_markup(_, chat_id)
+            caption = _["stream_1"].format(
                 config.SUPPORT_CHAT, title[:23], duration_min, user_name
             )
-            button = stream_markup(_, chat_id)
-            
-            if thumb_mode:
+            if thumb_on:
                 run = await app.send_photo(
                     original_chat_id,
                     photo=config.SOUNCLOUD_IMG_URL,
-                    caption=caption_text,
+                    caption=caption,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_message(
                     original_chat_id,
-                    text=caption_text,
+                    text=caption,
                     reply_markup=InlineKeyboardMarkup(button),
-                    disable_web_page_preview=True,
                 )
-
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
@@ -345,13 +310,6 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-
-            if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                try:
-                    await db[original_chat_id][0]["mystic"].delete()
-                except:
-                    pass
-                        
             await Signal.join_call(chat_id, original_chat_id, file_path, video=is_video)
             await put_queue(
                 chat_id,
@@ -367,25 +325,23 @@ async def stream(
             )
             if is_video:
                 await add_active_video_chat(chat_id)
-            
-            caption_text = _["stream_1"].format(link, title[:23], duration_min, user_name)
+            thumb_on = await get_thumb_setting(original_chat_id)
             button = stream_markup(_, chat_id)
-            
-            if thumb_mode:
+            caption = _["stream_1"].format(link, title[:23], duration_min, user_name)
+            thumb_photo = config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL
+            if thumb_on:
                 run = await app.send_photo(
                     original_chat_id,
-                    photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
-                    caption=caption_text,
+                    photo=thumb_photo,
+                    caption=caption,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_message(
                     original_chat_id,
-                    text=caption_text,
+                    text=caption,
                     reply_markup=InlineKeyboardMarkup(button),
-                    disable_web_page_preview=True,
                 )
-
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
@@ -418,13 +374,6 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-
-            if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                try:
-                    await db[original_chat_id][0]["mystic"].delete()
-                except:
-                    pass
-                        
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
@@ -447,31 +396,28 @@ async def stream(
                 "video" if is_video else "audio",
                 forceplay=forceplay,
             )
-            
-            caption_text = _["stream_1"].format(
+            thumb_on = await get_thumb_setting(original_chat_id)
+            button = stream_markup(_, chat_id)
+            caption = _["stream_1"].format(
                 f"https://t.me/{app.username}?start=info_{vidid}",
                 title[:23],
                 duration_min,
                 user_name,
             )
-            button = stream_markup(_, chat_id)
-
-            if thumb_mode:
+            if thumb_on:
                 img = await get_thumb(vidid)
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
-                    caption=caption_text,
+                    caption=caption,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_message(
                     original_chat_id,
-                    text=caption_text,
+                    text=caption,
                     reply_markup=InlineKeyboardMarkup(button),
-                    disable_web_page_preview=True,
                 )
-
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
@@ -500,13 +446,6 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            
-            if mystic and original_chat_id in db and db[original_chat_id][0].get("mystic"):
-                try:
-                    await db[original_chat_id][0]["mystic"].delete()
-                except:
-                    pass
-                        
             await Signal.join_call(
                 chat_id,
                 original_chat_id,
@@ -524,24 +463,22 @@ async def stream(
                 "video" if is_video else "audio",
                 forceplay=forceplay,
             )
-            caption_text = _["stream_2"].format(user_name)
+            thumb_on = await get_thumb_setting(original_chat_id)
             button = stream_markup(_, chat_id)
-            
-            if thumb_mode:
+            caption = _["stream_2"].format(user_name)
+            if thumb_on:
                 run = await app.send_photo(
                     original_chat_id,
                     photo=config.STREAM_IMG_URL,
-                    caption=caption_text,
+                    caption=caption,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_message(
                     original_chat_id,
-                    text=caption_text,
+                    text=caption,
                     reply_markup=InlineKeyboardMarkup(button),
-                    disable_web_page_preview=True,
                 )
-            
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
             await mystic.delete()
