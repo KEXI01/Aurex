@@ -46,37 +46,69 @@ async def reload_admin_cache(client, message: Message, _):
 
 
 # ── /reboot ──
-@app.on_message(filters.command("reboot") & filters.group & ~BANNED_USERS)
+@app.on_message(filters.command(["reboot"]) & filters.group & ~BANNED_USERS)
 @AdminActual
-async def restart_bot(client, message: Message, _):
+async def restartbot(client, message: Message, _):
     mystic = await message.reply_text(_["reload_4"].format(app.mention))
     await asyncio.sleep(1)
-
+    
     try:
+        # Clear main chat database
         db[message.chat.id] = []
-        await Space.force_stop_stream(message.chat.id)
-    except:
-        pass
-
+        
+        # Stop stream with enhanced call system
+        await Signal.stop_stream(message.chat.id)
+        
+        # Clear from active calls tracking
+        Signal.active_calls.discard(message.chat.id)
+        
+    except Exception as e:
+        # Fallback to force stop if needed
+        try:
+            await Signal.force_stop_stream(message.chat.id)
+        except:
+            pass
+    
+    # Resolve userbot peer for main chat
     userbot = await get_assistant(message.chat.id)
     try:
-        await userbot.resolve_peer(message.chat.username or message.chat.id)
+        if message.chat.username:
+            await userbot.resolve_peer(message.chat.username)
+        else:
+            await userbot.resolve_peer(message.chat.id)
     except:
         pass
-
+    
+    # Handle channel mode if enabled
     chat_id = await get_cmode(message.chat.id)
     if chat_id:
         try:
             got = await app.get_chat(chat_id)
-            userbot = await get_assistant(chat_id)
-            await userbot.resolve_peer(got.username or chat_id)
+            
+            # Clear channel mode database
             db[chat_id] = []
-            await Space.force_stop_stream(chat_id)
+            
+            # Stop channel mode stream
+            await Signal.stop_stream(chat_id)
+            Signal.active_calls.discard(chat_id)
+            
+        except Exception as e:
+            try:
+                await Signal.force_stop_stream(chat_id)
+            except:
+                pass
+        
+        # Resolve userbot peer for channel mode
+        userbot = await get_assistant(chat_id)
+        try:
+            if got.username:
+                await userbot.resolve_peer(got.username)
+            else:
+                await userbot.resolve_peer(chat_id)
         except:
             pass
-
-    await mystic.edit_text(_["reload_5"].format(app.mention))
-
+    
+    return await mystic.edit_text(_["reload_5"].format(app.mention))
 
 # ── Close Button Callback ──
 @app.on_callback_query(filters.regex("close") & ~BANNED_USERS)
