@@ -210,7 +210,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             return await CallbackQuery.answer(_["admin_27"], show_alert=True)
 
         if command == "Skip":
-            txt = f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} Flying Saucer"
+            txt = f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
             popped = None
             try:
                 popped = check.pop(0)
