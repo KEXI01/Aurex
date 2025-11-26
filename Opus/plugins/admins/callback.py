@@ -253,7 +253,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             except:
                 pass
         else:
-            txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} Flying Saucer"
+            txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} 🔖"
 
         try:
             if db.get(chat_id) and db[chat_id][0].get("mystic"):
