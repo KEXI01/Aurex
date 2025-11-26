@@ -37,17 +37,18 @@ BROWSER_HEADERS = {
 
 def extract_video_id(link: str) -> str:
     if "v=" in link:
-        return link.split("v=")[-1].split("&")[0]
-    m = re.search(r"youtu\.be/([A-Za-z0-9_\-]{6,})", link)
-    if m:
-        return m.group(1)
-    m = re.search(r"youtube\.com/shorts/([A-Za-z0-9_\-]{6,})", link)
-    if m:
-        return m.group(1)
-    m = re.search(r"youtube\.com/embed/([A-Za-z0-9_\-]{6,})", link)
-    if m:
-        return m.group(1)
-    return link.split("/")[-1].split("?")[0]
+        vid = link.split("v=")[-1].split("&")[0]
+    else:
+        m = re.search(r"youtu\.be/([A-Za-z0-9_\-]{6,})", link) or \
+            re.search(r"youtube\.com/shorts/([A-Za-z0-9_\-]{6,})", link) or \
+            re.search(r"youtube\.com/embed/([A-Za-z0-9_\-]{6,})", link)
+
+        if m:
+            vid = m.group(1)
+        else:
+            vid = link.split("/")[-1].split("?")[0]
+
+    return vid.strip().replace("\n", "").replace(" ", "")
 
 
 def _cookiefile_path() -> Optional[str]:
