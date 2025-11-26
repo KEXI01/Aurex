@@ -1,4 +1,4 @@
-from pyrogram.enums import ChatType
+from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import SlowmodeWait, FloodWait
 import asyncio
@@ -25,10 +25,8 @@ async def safe_reply_text(message, text, **kwargs):
     try:
         return await message.reply_text(text, **kwargs)
     except (SlowmodeWait, FloodWait):
-        # Silently handle rate limits - don't send message
         return None
     except Exception:
-        # Handle any other errors silently
         return None
 
 async def safe_answer_callback(callback_query, text, show_alert=False):
@@ -36,10 +34,8 @@ async def safe_answer_callback(callback_query, text, show_alert=False):
     try:
         return await callback_query.answer(text, show_alert=show_alert)
     except (SlowmodeWait, FloodWait):
-        # Silently handle rate limits
         return None
     except Exception:
-        # Handle any other errors silently
         return None
 
 def AdminRightsCheck(mystic):
@@ -188,7 +184,7 @@ def AdminActual(mystic):
             )
             await safe_reply_text(message, _["general_3"], reply_markup=upl)
             return
-            
+
         if message.from_user.id not in SUDOERS:
             try:
                 member = (
@@ -246,6 +242,80 @@ def ActualAdminCB(mystic):
                         await safe_answer_callback(CallbackQuery, _["general_4"], show_alert=True)
                         return
                         
+        return await mystic(client, CallbackQuery, _)
+
+    return wrapper
+
+
+
+def CreatorOnly(mystic):
+    """
+    Allows only the group creator/owner or SUDOERS to run the command.
+    Uses string-based text keys from strings.get_string for replies.
+    """
+    async def wrapper(client, message):
+        try:
+            language = await get_lang(message.chat.id)
+            _ = get_string(language)
+        except:
+            _ = get_string("en")
+
+        if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+            return await mystic(client, message, _)
+
+        uid = message.from_user.id
+        if uid in SUDOERS:
+            return await mystic(client, message, _)
+
+        try:
+            member = await app.get_chat_member(message.chat.id, uid)
+        except Exception:
+            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪғʏ ᴘᴇʀᴍɪssɪᴏɴs."
+            await safe_reply_text(message, text)
+            return
+
+        status = getattr(member, "status", None)
+        if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
+            text = _["creator_only"] if "creator_only" in _ else "ᴏɴʟʏ ɢʀᴏᴜᴘ ᴄʀᴇᴀᴛᴏʀ ᴄᴀɴ ʀᴜɴ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ."
+            await safe_reply_text(message, text)
+            return
+
+        return await mystic(client, message, _)
+
+    return wrapper
+
+
+def CreatorOnlyCB(mystic):
+    """
+    CallbackQuery version of CreatorOnly decorator.
+    """
+    async def wrapper(client, CallbackQuery):
+        try:
+            language = await get_lang(CallbackQuery.message.chat.id)
+            _ = get_string(language)
+        except:
+            _ = get_string("en")
+
+        if CallbackQuery.message.chat.type == ChatType.PRIVATE:
+            return await mystic(client, CallbackQuery, _)
+
+        uid = CallbackQuery.from_user.id
+        if uid in SUDOERS:
+            return await mystic(client, CallbackQuery, _)
+
+        try:
+            member = await app.get_chat_member(CallbackQuery.message.chat.id, uid)
+        except Exception:
+            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪғʏ ᴘᴇʀᴍɪssɪᴏɴs."
+            await safe_answer_callback(CallbackQuery, text, show_alert=True)
+            return
+
+        status = getattr(member, "status", None)
+        if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
+            text = _["creator_only_cb"] if "creator_only_cb" in _ else "ᴏɴʟʏ ɢʀᴏᴜᴘ ᴄʀᴇᴀᴛᴏʀ ᴄᴀɴ ᴜsᴇ ᴛʜɪs."
+            await safe_answer_callback(CallbackQuery, text, show_alert=True)
+            return
+
         return await mystic(client, CallbackQuery, _)
 
     return wrapper
