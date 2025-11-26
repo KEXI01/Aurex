@@ -93,9 +93,8 @@ class YouTubeAPI:
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
         prepared = self._prepare_link(query)
-        # try search first (handles plain queries like "pyaro vrindavan")
         try:
-            data = await VideosSearch(query, limit=1).next()
+            data = await VideosSearch(prepared, limit=1).next()
             result = data.get("result", [])
             if result:
                 info = result[0]
@@ -105,7 +104,6 @@ class YouTubeAPI:
                 return info
         except Exception:
             pass
-        # fallback: if it's a youtube link, try yt-dlp dump-json
         if self._url_pattern.search(prepared):
             stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
             if not stdout:
@@ -120,19 +118,19 @@ class YouTubeAPI:
                 return info
             except json.JSONDecodeError:
                 return None
-        # final fallback: try VideosSearch on prepared link
-        try:
-            data = await VideosSearch(prepared, limit=1).next()
-            result = data.get("result", [])
-            if not result:
+        else:
+            try:
+                data = await VideosSearch(prepared, limit=1).next()
+                result = data.get("result", [])
+                if not result:
+                    return None
+                info = result[0]
+                info["webpage_url"] = self.base_url + info.get("id", "")
+                if "thumbnails" not in info or not info.get("thumbnails"):
+                    info["thumbnails"] = [{"url": info.get("thumbnail", "")}]
+                return info
+            except Exception:
                 return None
-            info = result[0]
-            info["webpage_url"] = self.base_url + info.get("id", "")
-            if "thumbnails" not in info or not info.get("thumbnails"):
-                info["thumbnails"] = [{"url": info.get("thumbnail", "")}]
-            return info
-        except Exception:
-            return None
 
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
@@ -197,8 +195,7 @@ class YouTubeAPI:
         return [i for i in items if i]
 
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
-        query = link if not videoid else self._prepare_link(link, videoid)
-        info = await self._fetch_video_info(query)
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
         if not info:
             raise ValueError("Track not found")
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[0].get("url", "")).split("?")[0]
