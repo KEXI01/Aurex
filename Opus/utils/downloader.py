@@ -95,7 +95,7 @@ async def _stream(url: str, params: dict, out_path: str, timeout: float) -> bool
     return os.path.exists(out_path) and os.path.getsize(out_path) > 0
 
 
-async def api_download_audio(video_id: str) -> Optional[str]:
+async def download_song_audio(video_id: str) -> Optional[str]:
     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp3"
     ok = await _stream(
         f"{SYPHIX_BASE}/stream_id",
@@ -106,7 +106,7 @@ async def api_download_audio(video_id: str) -> Optional[str]:
     return out_path if ok else None
 
 
-async def api_download_video(video_id_or_link: str, quality: str = "360") -> Optional[str]:
+async def download_song_video(video_id_or_link: str, quality: str = "360") -> Optional[str]:
     if "youtube" in video_id_or_link:
         url = video_id_or_link
     else:
