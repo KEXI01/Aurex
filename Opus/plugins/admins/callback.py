@@ -113,9 +113,9 @@ async def del_back_playlist(client, CallbackQuery, _):
                 return await CallbackQuery.edit_message_text(f"ғᴀɪʟᴇᴅ.")
             try:
                 if current["vidid"] != exists["vidid"]:
-                    return await CallbackQuery.edit_message.text(_["admin_35"])
+                    return await CallbackQuery.edit_message_text(_["admin_35"])
                 if current["file"] != exists["file"]:
-                    return await CallbackQuery.edit_message.text(_["admin_35"])
+                    return await CallbackQuery.edit_message_text(_["admin_35"])
             except:
                 return await CallbackQuery.edit_message_text(_["admin_36"])
             try:
@@ -136,7 +136,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                 [
                     [
                         InlineKeyboardButton(
-                            text=f"👍 {get_upvotes}",
+                            text=f"UpVote {get_upvotes}",
                             callback_data=f"ADMIN  UpVote|{chat_id}_{counter}",
                         )
                     ]
@@ -190,18 +190,15 @@ async def del_back_playlist(client, CallbackQuery, _):
             await set_loop(chat_id, 0)
         except:
             pass
-        if chat_id in db and db[chat_id][0].get("mystic"):
-            try:
+        try:
+            if db.get(chat_id) and db[chat_id][0].get("mystic"):
                 await db[chat_id][0]["mystic"].delete()
-            except:
-                pass
+        except:
+            pass
         try:
             db.pop(chat_id, None)
         except:
-            try:
-                db[chat_id] = []
-            except:
-                pass
+            pass
         sent_msg = await CallbackQuery.message.reply_text(
             _["admin_5"].format(mention), reply_markup=close_markup(_)
         )
@@ -209,8 +206,11 @@ async def del_back_playlist(client, CallbackQuery, _):
         await CallbackQuery.message.delete()
     elif command == "Skip" or command == "Replay":
         check = db.get(chat_id)
+        if not check:
+            return await CallbackQuery.answer(_["admin_27"], show_alert=True)
+
         if command == "Skip":
-            txt = f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
+            txt = f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} Flying Saucer"
             popped = None
             try:
                 popped = check.pop(0)
@@ -218,9 +218,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                     await auto_clean(popped)
                 if not check:
                     try:
-                        await CallbackQuery.edit_message_text(
-                            f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
-                        )
+                        await CallbackQuery.edit_message_text(txt)
                     except:
                         pass
                     sent_msg = await CallbackQuery.message.reply_text(
@@ -230,11 +228,11 @@ async def del_back_playlist(client, CallbackQuery, _):
                         reply_markup=close_markup(_),
                     )
                     asyncio.create_task(delete_after_delay(sent_msg, 10))
-                    if chat_id in db and db[chat_id][0].get("mystic"):
-                        try:
+                    try:
+                        if db.get(chat_id) and db[chat_id][0].get("mystic"):
                             await db[chat_id][0]["mystic"].delete()
-                        except:
-                            pass
+                    except:
+                        pass
                     try:
                         await Signal.stop_stream(chat_id)
                     except:
@@ -250,57 +248,19 @@ async def del_back_playlist(client, CallbackQuery, _):
                     try:
                         db.pop(chat_id, None)
                     except:
-                        try:
-                            db[chat_id] = []
-                        except:
-                            pass
+                        pass
                     return
             except:
-                try:
-                    await CallbackQuery.edit_message_text(
-                        f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} ≤"
-                    )
-                except:
-                    pass
-                sent_msg = await CallbackQuery.message.reply_text(
-                    text=_["admin_6"].format(
-                        mention, CallbackQuery.message.chat.title
-                    ),
-                    reply_markup=close_markup(_),
-                )
-                asyncio.create_task(delete_after_delay(sent_msg, 10))
-                if chat_id in db and db[chat_id][0].get("mystic"):
-                    try:
-                        await db[chat_id][0]["mystic"].delete()
-                    except:
-                        pass
-                try:
-                    await Signal.stop_stream(chat_id)
-                except:
-                    pass
-                try:
-                    await music_off(chat_id)
-                except:
-                    pass
-                try:
-                    await set_loop(chat_id, 0)
-                except:
-                    pass
-                try:
-                    db.pop(chat_id, None)
-                except:
-                    try:
-                        db[chat_id] = []
-                    except:
-                        pass
-                return
-        else:
-            txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} 🛸"
-        if chat_id in db and db[chat_id][0].get("mystic"):
-            try:
-                await db[chat_id][0]["mystic"].delete()
-            except:
                 pass
+        else:
+            txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} Flying Saucer"
+
+        try:
+            if db.get(chat_id) and db[chat_id][0].get("mystic"):
+                await db[chat_id][0]["mystic"].delete()
+        except:
+            pass
+
         await CallbackQuery.answer()
         queued = check[0]["file"]
         title = (check[0]["title"]).title()
@@ -310,13 +270,16 @@ async def del_back_playlist(client, CallbackQuery, _):
         videoid = check[0]["vidid"]
         status = True if str(streamtype) == "video" else None
         db[chat_id][0]["played"] = 0
-        exis = (check[0]).get("old_dur")
+        exis = check[0].get("old_dur")
         if exis:
             db[chat_id][0]["dur"] = exis
             db[chat_id][0]["seconds"] = check[0]["old_second"]
             db[chat_id][0]["speed_path"] = None
             db[chat_id][0]["speed"] = 1.0
+
+
         button = stream_markup(_, chat_id)
+
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
             if n == 0:
@@ -357,6 +320,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
+
         elif "vid_" in queued:
             mystic_dl = await CallbackQuery.message.reply_text(
                 _["call_7"], disable_web_page_preview=True
@@ -404,6 +368,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
+
         elif "index_" in queued:
             try:
                 await Signal.skip_stream(chat_id, videoid, video=status)
@@ -428,6 +393,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
+
         else:
             if videoid == "telegram":
                 image = None
@@ -442,35 +408,16 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, queued, video=status, image=image)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-            if videoid == "telegram":
+            if videoid in ["telegram", "soundcloud"]:
                 caption_text = _["stream_1"].format(
                     SUPPORT_CHAT, title[:23], duration, user
                 )
+                photo_url = TELEGRAM_AUDIO_URL if streamtype == "audio" else TELEGRAM_VIDEO_URL
+                if videoid == "soundcloud":
+                    photo_url = SOUNCLOUD_IMG_URL if streamtype == "audio" else TELEGRAM_VIDEO_URL
                 if thumb_mode:
                     run = await CallbackQuery.message.reply_photo(
-                        photo=TELEGRAM_AUDIO_URL
-                        if str(streamtype) == "audio"
-                        else TELEGRAM_VIDEO_URL,
-                        caption=caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                else:
-                    run = await CallbackQuery.message.reply_text(
-                        caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                        disable_web_page_preview=True,
-                    )
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "tg"
-            elif videoid == "soundcloud":
-                caption_text = _["stream_1"].format(
-                    SUPPORT_CHAT, title[:23], duration, user
-                )
-                if thumb_mode:
-                    run = await CallbackQuery.message.reply_photo(
-                        photo=SOUNCLOUD_IMG_URL
-                        if str(streamtype) == "audio"
-                        else TELEGRAM_VIDEO_URL,
+                        photo=photo_url,
                         caption=caption_text,
                         reply_markup=InlineKeyboardMarkup(button),
                     )
@@ -517,14 +464,13 @@ async def markup_timer():
                 if not await is_music_playing(chat_id):
                     continue
                 playing = db.get(chat_id)
-                if not playing:
+                if not playing or not playing:
                     continue
                 duration_seconds = int(playing[0]["seconds"])
                 if duration_seconds == 0:
                     continue
-                try:
-                    mystic = playing[0]["mystic"]
-                except:
+                mystic = playing[0].get("mystic")
+                if not mystic:
                     continue
                 try:
                     check = checker[chat_id][mystic.id]
