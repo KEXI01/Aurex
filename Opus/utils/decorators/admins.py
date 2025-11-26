@@ -247,13 +247,8 @@ def ActualAdminCB(mystic):
     return wrapper
 
 
-
 def CreatorOnly(mystic):
-    """
-    Allows only the group creator/owner or SUDOERS to run the command.
-    Uses string-based text keys from strings.get_string for replies.
-    """
-    async def wrapper(client, message):
+    async def wrapper(client, message, *args, **kwargs):
         try:
             language = await get_lang(message.chat.id)
             _ = get_string(language)
@@ -261,61 +256,55 @@ def CreatorOnly(mystic):
             _ = get_string("en")
 
         if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-            return await mystic(client, message, _)
+            return await mystic(client, message, *args, **kwargs)
 
         uid = message.from_user.id
         if uid in SUDOERS:
-            return await mystic(client, message, _)
+            return await mystic(client, message, *args, **kwargs)
 
         try:
             member = await app.get_chat_member(message.chat.id, uid)
-        except Exception:
-            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪғʏ ᴘᴇʀᴍɪssɪᴏɴs."
+        except:
+            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪꜰʏ ᴛʜᴇ ᴄʀᴇᴀᴛᴏʀ."
             await safe_reply_text(message, text)
             return
 
         status = getattr(member, "status", None)
         if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
-            text = _["creator_only"] if "creator_only" in _ else "ᴏɴʟʏ ɢʀᴏᴜᴘ ᴄʀᴇᴀᴛᴏʀ ᴄᴀɴ ʀᴜɴ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ."
+            text = _["creator_only"] if "creator_only" in _ else "ʏᴏᴜ ᴅᴏᴇsɴ'ᴛ sᴇᴇᴍ ᴛᴏ ʙᴇ ᴛʜɪs ɢʀᴏᴜᴘ ᴏᴡɴᴇʀ."
             await safe_reply_text(message, text)
             return
 
-        return await mystic(client, message, _)
+        return await mystic(client, message, *args, **kwargs)
 
     return wrapper
 
 
 def CreatorOnlyCB(mystic):
-    """
-    CallbackQuery version of CreatorOnly decorator.
-    """
-    async def wrapper(client, CallbackQuery):
+    async def wrapper(client, CallbackQuery, *args, **kwargs):
         try:
             language = await get_lang(CallbackQuery.message.chat.id)
             _ = get_string(language)
         except:
             _ = get_string("en")
 
-        if CallbackQuery.message.chat.type == ChatType.PRIVATE:
-            return await mystic(client, CallbackQuery, _)
-
         uid = CallbackQuery.from_user.id
         if uid in SUDOERS:
-            return await mystic(client, CallbackQuery, _)
+            return await mystic(client, CallbackQuery, *args, **kwargs)
 
         try:
             member = await app.get_chat_member(CallbackQuery.message.chat.id, uid)
-        except Exception:
-            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪғʏ ᴘᴇʀᴍɪssɪᴏɴs."
+        except:
+            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪꜰʏ ᴛʜᴇ ᴄʀᴇᴀᴛᴏʀ."
             await safe_answer_callback(CallbackQuery, text, show_alert=True)
             return
 
         status = getattr(member, "status", None)
         if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
-            text = _["creator_only_cb"] if "creator_only_cb" in _ else "ᴏɴʟʏ ɢʀᴏᴜᴘ ᴄʀᴇᴀᴛᴏʀ ᴄᴀɴ ᴜsᴇ ᴛʜɪs."
+            text = _["creator_only_cb"] if "creator_only_cb" in _ else "ʏᴏᴜ ᴅᴏᴇsɴ'ᴛ sᴇᴇᴍ ᴛᴏ ʙᴇ ᴛʜɪs ɢʀᴏᴜᴘ ᴏᴡɴᴇʀ."
             await safe_answer_callback(CallbackQuery, text, show_alert=True)
             return
 
-        return await mystic(client, CallbackQuery, _)
+        return await mystic(client, CallbackQuery, *args, **kwargs)
 
     return wrapper
