@@ -46,6 +46,21 @@ async def delete_after_delay(message, delay=10):
     except:
         pass
 
+def parse_duration_to_seconds(dur):
+    try:
+        if isinstance(dur, int):
+            return dur
+        parts = str(dur).split(":")
+        parts = [int(p) for p in parts if p != ""]
+        if len(parts) == 1:
+            return parts[0]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    except:
+        return 0
+    return 0
 
 @app.on_callback_query(filters.regex("ADMIN") & ~BANNED_USERS)
 @languageCB
@@ -61,8 +76,6 @@ async def del_back_playlist(client, CallbackQuery, _):
     if not await is_active_chat(chat_id):
         return await CallbackQuery.answer(_["general_5"], show_alert=True)
     mention = CallbackQuery.from_user.mention
-    
-    # Check thumbnail setting
     thumb_mode = await get_thumb_setting(chat_id)
 
     if command == "UpVote":
@@ -152,7 +165,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         sent_msg = await CallbackQuery.message.reply_text(
             _["admin_2"].format(mention), reply_markup=close_markup(_)
         )
-        asyncio.create_task(delete_after_delay(sent_msg))
+        asyncio.create_task(delete_after_delay(sent_msg, 10))
     elif command == "Resume":
         if await is_music_playing(chat_id):
             return await CallbackQuery.answer(_["admin_3"], show_alert=True)
@@ -162,24 +175,37 @@ async def del_back_playlist(client, CallbackQuery, _):
         sent_msg = await CallbackQuery.message.reply_text(
             _["admin_4"].format(mention), reply_markup=close_markup(_)
         )
-        asyncio.create_task(delete_after_delay(sent_msg))
+        asyncio.create_task(delete_after_delay(sent_msg, 10))
     elif command == "Stop" or command == "End":
         await CallbackQuery.answer()
-        await Signal.stop_stream(chat_id)
-        await set_loop(chat_id, 0)
-        
-        # Stream Message Cleanup: Delete stream photo/caption message
+        try:
+            await Signal.stop_stream(chat_id)
+        except:
+            pass
+        try:
+            await music_off(chat_id)
+        except:
+            pass
+        try:
+            await set_loop(chat_id, 0)
+        except:
+            pass
         if chat_id in db and db[chat_id][0].get("mystic"):
             try:
                 await db[chat_id][0]["mystic"].delete()
             except:
                 pass
-        
+        try:
+            db.pop(chat_id, None)
+        except:
+            try:
+                db[chat_id] = []
+            except:
+                pass
         sent_msg = await CallbackQuery.message.reply_text(
             _["admin_5"].format(mention), reply_markup=close_markup(_)
         )
-        asyncio.create_task(delete_after_delay(sent_msg))
-        
+        asyncio.create_task(delete_after_delay(sent_msg, 10))
         await CallbackQuery.message.delete()
     elif command == "Skip" or command == "Replay":
         check = db.get(chat_id)
@@ -191,62 +217,90 @@ async def del_back_playlist(client, CallbackQuery, _):
                 if popped:
                     await auto_clean(popped)
                 if not check:
-                    await CallbackQuery.edit_message_text(
-                        f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
-                    )
+                    try:
+                        await CallbackQuery.edit_message_text(
+                            f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} 🛸"
+                        )
+                    except:
+                        pass
                     sent_msg = await CallbackQuery.message.reply_text(
                         text=_["admin_6"].format(
                             mention, CallbackQuery.message.chat.title
                         ),
                         reply_markup=close_markup(_),
                     )
-                    asyncio.create_task(delete_after_delay(sent_msg))
-                    
-                    # Stream Message Cleanup: Delete stream photo/caption 
-
+                    asyncio.create_task(delete_after_delay(sent_msg, 10))
                     if chat_id in db and db[chat_id][0].get("mystic"):
                         try:
                             await db[chat_id][0]["mystic"].delete()
                         except:
                             pass
-                            
                     try:
-                        return await Signal.stop_stream(chat_id)
+                        await Signal.stop_stream(chat_id)
                     except:
-                        return
+                        pass
+                    try:
+                        await music_off(chat_id)
+                    except:
+                        pass
+                    try:
+                        await set_loop(chat_id, 0)
+                    except:
+                        pass
+                    try:
+                        db.pop(chat_id, None)
+                    except:
+                        try:
+                            db[chat_id] = []
+                        except:
+                            pass
+                    return
             except:
                 try:
                     await CallbackQuery.edit_message_text(
                         f"> ᴛʀᴀᴄᴋ sᴋɪᴩᴩᴇᴅ\n•ʙʏ : {mention} ≤"
                     )
-                    sent_msg = await CallbackQuery.message.reply_text(
-                        text=_["admin_6"].format(
-                            mention, CallbackQuery.message.chat.title
-                        ),
-                        reply_markup=close_markup(_),
-                    )
-                    asyncio.create_task(delete_after_delay(sent_msg))
-                    
-                    # Stream Message Cleanup: Delete stream photo/caption message
-                    if chat_id in db and db[chat_id][0].get("mystic"):
-                        try:
-                            await db[chat_id][0]["mystic"].delete()
-                        except:
-                            pass
-                            
-                    return await Signal.stop_stream(chat_id)
                 except:
-                    return
+                    pass
+                sent_msg = await CallbackQuery.message.reply_text(
+                    text=_["admin_6"].format(
+                        mention, CallbackQuery.message.chat.title
+                    ),
+                    reply_markup=close_markup(_),
+                )
+                asyncio.create_task(delete_after_delay(sent_msg, 10))
+                if chat_id in db and db[chat_id][0].get("mystic"):
+                    try:
+                        await db[chat_id][0]["mystic"].delete()
+                    except:
+                        pass
+                try:
+                    await Signal.stop_stream(chat_id)
+                except:
+                    pass
+                try:
+                    await music_off(chat_id)
+                except:
+                    pass
+                try:
+                    await set_loop(chat_id, 0)
+                except:
+                    pass
+                try:
+                    db.pop(chat_id, None)
+                except:
+                    try:
+                        db[chat_id] = []
+                    except:
+                        pass
+                return
         else:
             txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} 🛸"
-            
-        # Stream Message Cleanup: Delete current stream message before playing new one
         if chat_id in db and db[chat_id][0].get("mystic"):
             try:
                 await db[chat_id][0]["mystic"].delete()
             except:
                 pass
-                
         await CallbackQuery.answer()
         queued = check[0]["file"]
         title = (check[0]["title"]).title()
@@ -262,12 +316,7 @@ async def del_back_playlist(client, CallbackQuery, _):
             db[chat_id][0]["seconds"] = check[0]["old_second"]
             db[chat_id][0]["speed_path"] = None
             db[chat_id][0]["speed"] = 1.0
-            
-        
-        # --- Stream Display Logic (with Thumbnail Check) ---
-        
         button = stream_markup(_, chat_id)
-        
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
             if n == 0:
@@ -283,7 +332,6 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, link, video=status, image=image)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-            
             caption_text = _["stream_1"].format(
                 f"https://t.me/{app.username}?start=info_{videoid}",
                 title[:23],
@@ -306,7 +354,9 @@ async def del_back_playlist(client, CallbackQuery, _):
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
-            
+            sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
+            if sec and sec > 0:
+                asyncio.create_task(delete_after_delay(run, sec + 2))
         elif "vid_" in queued:
             mystic_dl = await CallbackQuery.message.reply_text(
                 _["call_7"], disable_web_page_preview=True
@@ -328,7 +378,6 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, file_path, video=status, image=image)
             except:
                 return await mystic_dl.edit_text(_["call_6"])
-            
             caption_text = _["stream_1"].format(
                 f"https://t.me/{app.username}?start=info_{videoid}",
                 title[:23],
@@ -352,13 +401,14 @@ async def del_back_playlist(client, CallbackQuery, _):
             db[chat_id][0]["markup"] = "stream"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
             await mystic_dl.delete()
-            
+            sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
+            if sec and sec > 0:
+                asyncio.create_task(delete_after_delay(run, sec + 2))
         elif "index_" in queued:
             try:
                 await Signal.skip_stream(chat_id, videoid, video=status)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-            
             caption_text = _["stream_2"].format(user)
             if thumb_mode:
                 run = await CallbackQuery.message.reply_photo(
@@ -375,7 +425,9 @@ async def del_back_playlist(client, CallbackQuery, _):
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
-            
+            sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
+            if sec and sec > 0:
+                asyncio.create_task(delete_after_delay(run, sec + 2))
         else:
             if videoid == "telegram":
                 image = None
@@ -390,10 +442,9 @@ async def del_back_playlist(client, CallbackQuery, _):
                 await Signal.skip_stream(chat_id, queued, video=status, image=image)
             except:
                 return await CallbackQuery.message.reply_text(_["call_6"])
-                
             if videoid == "telegram":
                 caption_text = _["stream_1"].format(
-                    config.SUPPORT_CHAT, title[:23], duration, user
+                    SUPPORT_CHAT, title[:23], duration, user
                 )
                 if thumb_mode:
                     run = await CallbackQuery.message.reply_photo(
@@ -454,7 +505,9 @@ async def del_back_playlist(client, CallbackQuery, _):
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
             await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
-
+            sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
+            if sec and sec > 0:
+                asyncio.create_task(delete_after_delay(run, sec + 2))
 
 async def markup_timer():
     while not await asyncio.sleep(7):
@@ -498,6 +551,5 @@ async def markup_timer():
                     continue
             except:
                 continue
-
 
 asyncio.create_task(markup_timer())
