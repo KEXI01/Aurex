@@ -11,10 +11,10 @@ from yt_dlp import YoutubeDL
 DOWNLOAD_DIR = "downloads"
 CACHE_DIR = "cache"
 COOKIE_PATH = "Opus/assets/cookies.txt"
+CHUNK_SIZE = 12 * 1024 * 1024
 
 _client: Optional[httpx.AsyncClient] = None
 _client_lock = asyncio.Lock()
-
 
 BROWSER_HEADERS = {
     "Accept": "*/*",
@@ -42,12 +42,10 @@ def extract_video_id(link: str) -> str:
         m = re.search(r"youtu\.be/([A-Za-z0-9_\-]{6,})", link) or \
             re.search(r"youtube\.com/shorts/([A-Za-z0-9_\-]{6,})", link) or \
             re.search(r"youtube\.com/embed/([A-Za-z0-9_\-]{6,})", link)
-
         if m:
             vid = m.group(1)
         else:
             vid = link.split("/")[-1].split("?")[0]
-
     return vid.strip().replace("\n", "").replace(" ", "")
 
 
@@ -95,7 +93,7 @@ async def _get_client() -> httpx.AsyncClient:
         if _client and not _client.is_closed:
             return _client
         _client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60, connect=10, read=60),
+            timeout=httpx.Timeout(120, connect=15, read=120),
             follow_redirects=True,
             headers=BROWSER_HEADERS,
         )
@@ -105,18 +103,21 @@ async def _get_client() -> httpx.AsyncClient:
 async def _direct_save(url: str, out_path: str) -> bool:
     try:
         client = await _get_client()
-        r = await client.get(url)
-
-        print(f"[API CALL] {url} -> {r.status_code}")
-
-        if r.status_code != 200:
-            return False
-
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        async with aiofiles.open(out_path, "wb") as f:
-            await f.write(r.content)
-
-        return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+        async with client.stream("GET", url) as resp:
+            status = resp.status_code
+            print(f"[API CALL] {url} -> {status}")
+            if status not in (200, 206):
+                print(f"[API FAIL] unexpected status {status} for {url}")
+                return False
+            async with aiofiles.open(out_path, "wb") as f:
+                async for chunk in resp.aiter_bytes(CHUNK_SIZE):
+                    if not chunk:
+                        continue
+                    await f.write(chunk)
+        ok = os.path.exists(out_path) and os.path.getsize(out_path) > 0
+        print(f"[API SAVED] {out_path} -> {ok}")
+        return ok
     except Exception as e:
         print(f"[API ERROR] {url} | {e}")
         return False
@@ -149,7 +150,7 @@ def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
             return None
         out = os.path.join(DOWNLOAD_DIR, list(after)[0])
         return out if os.path.getsize(out) > 0 else None
-    except:
+    except Exception:
         return None
 
 
@@ -160,12 +161,11 @@ async def _run_ytdlp(link: str, opts: dict) -> Optional[str]:
 
 async def download_audio(link: str) -> Optional[str]:
     video_id = extract_video_id(link)
-
     if cached := file_exists(video_id, "mp3"):
         return cached
 
     api_file = await api_download_audio(video_id)
-    if api_file:
+    if api_file and os.path.exists(api_file):
         return api_file
 
     opts = _ytdlp_base_opts()
@@ -183,12 +183,11 @@ async def download_audio(link: str) -> Optional[str]:
 
 async def download_video(link: str, quality: int = 360) -> Optional[str]:
     video_id = extract_video_id(link)
-
     if cached := file_exists(video_id, "mp4"):
         return cached
 
     api_file = await api_download_video(video_id)
-    if api_file:
+    if api_file and os.path.exists(api_file):
         return api_file
 
     opts = _ytdlp_base_opts()
@@ -204,7 +203,7 @@ async def download_song_video(link: str, format_id: Optional[str], title: str) -
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe}.mp4"
 
-    if os.path.exists(out_path):
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
 
     api_file = await api_download_video(video_id)
@@ -226,7 +225,7 @@ async def download_song_audio(link: str, format_id: Optional[str], title: str) -
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe}.mp3"
 
-    if os.path.exists(out_path):
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
 
     api_file = await api_download_audio(video_id)
