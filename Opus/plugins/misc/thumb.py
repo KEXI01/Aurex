@@ -3,8 +3,13 @@ from Opus import app
 from Opus.utils.database import set_thumb_setting, get_thumb_setting, get_lang
 from strings import get_string
 from Opus.utils.decorators import CreatorOnly
+from config import BANNED_USERS
 
-@app.on_message(filters.command(["thumb", "thumbnail"]))
+@app.on_message(
+    filters.command(["thumb", "thumbnail"], prefixes=["/"])
+    & filters.group
+    & ~BANNED_USERS
+)
 @CreatorOnly
 async def thumb_toggle(_, message):
     chat_id = message.chat.id
