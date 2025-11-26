@@ -2,7 +2,7 @@ from pyrogram import filters
 from Opus import app
 from Opus.utils.database import set_thumb_setting, get_thumb_setting, get_lang
 from strings import get_string
-from Opus.utils.decorators.creator_only import CreatorOnly
+from Opus.utils.decorators import CreatorOnly
 
 @app.on_message(filters.command(["thumb", "thumbnail"]))
 @CreatorOnly
