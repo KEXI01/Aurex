@@ -16,6 +16,25 @@ _client: Optional[httpx.AsyncClient] = None
 _client_lock = asyncio.Lock()
 
 
+BROWSER_HEADERS = {
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Pragma": "no-cache",
+    "Sec-Fetch-Dest": "video",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "cross-site",
+    "Upgrade-Insecure-Requests": "1",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
+
+
 def extract_video_id(link: str) -> str:
     if "v=" in link:
         return link.split("v=")[-1].split("&")[0]
@@ -40,9 +59,9 @@ def _cookiefile_path() -> Optional[str]:
 def file_exists(video_id: str, ext: str = None) -> Optional[str]:
     exts = [ext] if ext else ("mp3", "m4a", "webm", "mp4")
     for e in exts:
-        path = f"{DOWNLOAD_DIR}/{video_id}.{e}"
-        if os.path.exists(path):
-            return path
+        f = f"{DOWNLOAD_DIR}/{video_id}.{e}"
+        if os.path.exists(f):
+            return f
     return None
 
 
@@ -77,7 +96,7 @@ async def _get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(
             timeout=httpx.Timeout(60, connect=10, read=60),
             follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers=BROWSER_HEADERS,
         )
     return _client
 
@@ -86,15 +105,16 @@ async def _direct_save(url: str, out_path: str) -> bool:
     try:
         client = await _get_client()
         r = await client.get(url)
+
+        print(f"[API CALL] {url} -> {r.status_code}")
+
         if r.status_code != 200:
-            print(f"[API FAIL] {url} (status: {r.status_code})")
             return False
 
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         async with aiofiles.open(out_path, "wb") as f:
             await f.write(r.content)
 
-        print(f"[API SAVED] {out_path}")
         return os.path.exists(out_path) and os.path.getsize(out_path) > 0
     except Exception as e:
         print(f"[API ERROR] {url} | {e}")
@@ -103,33 +123,31 @@ async def _direct_save(url: str, out_path: str) -> bool:
 
 async def api_download_audio(video_id: str) -> Optional[str]:
     url = f"https://syphixlabs.opusx.workers.dev/stream_id?video_id={video_id}&format=m4a"
-    print(f"[API AUDIO] Calling: {url}")
     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp3"
     ok = await _direct_save(url, out_path)
-    print(f"[API AUDIO RESULT] {video_id} -> {ok}")
+    print(f"[API AUDIO] {video_id} -> {ok}")
     return out_path if ok else None
 
 
 async def api_download_video(video_id: str) -> Optional[str]:
     url = f"https://syphixlabs.opusx.workers.dev/stream_id?video_id={video_id}&format=mp4"
-    print(f"[API VIDEO] Calling: {url}")
     out_path = f"{DOWNLOAD_DIR}/{video_id}.mp4"
     ok = await _direct_save(url, out_path)
-    print(f"[API VIDEO RESULT] {video_id} -> {ok}")
+    print(f"[API VIDEO] {video_id} -> {ok}")
     return out_path if ok else None
 
 
 def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
     try:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        pre = set(os.listdir(DOWNLOAD_DIR))
+        before = set(os.listdir(DOWNLOAD_DIR))
         with YoutubeDL(opts) as ydl:
             ydl.download([link])
-        post = set(os.listdir(DOWNLOAD_DIR)) - pre
-        if not post:
+        after = set(os.listdir(DOWNLOAD_DIR)) - before
+        if not after:
             return None
-        path = os.path.join(DOWNLOAD_DIR, list(post)[0])
-        return path if os.path.getsize(path) > 0 else None
+        out = os.path.join(DOWNLOAD_DIR, list(after)[0])
+        return out if os.path.getsize(out) > 0 else None
     except:
         return None
 
@@ -141,6 +159,7 @@ async def _run_ytdlp(link: str, opts: dict) -> Optional[str]:
 
 async def download_audio(link: str) -> Optional[str]:
     video_id = extract_video_id(link)
+
     if cached := file_exists(video_id, "mp3"):
         return cached
 
@@ -163,6 +182,7 @@ async def download_audio(link: str) -> Optional[str]:
 
 async def download_video(link: str, quality: int = 360) -> Optional[str]:
     video_id = extract_video_id(link)
+
     if cached := file_exists(video_id, "mp4"):
         return cached
 
@@ -183,7 +203,7 @@ async def download_song_video(link: str, format_id: Optional[str], title: str) -
     video_id = extract_video_id(link)
     out_path = f"{DOWNLOAD_DIR}/{safe}.mp4"
 
-    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+    if os.path.exists(out_path):
         return out_path
 
     api_file = await api_download_video(video_id)
