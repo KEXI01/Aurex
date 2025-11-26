@@ -265,14 +265,11 @@ def CreatorOnly(mystic):
         try:
             member = await app.get_chat_member(message.chat.id, uid)
         except:
-            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪꜰʏ ᴛʜᴇ ᴄʀᴇᴀᴛᴏʀ."
-            await safe_reply_text(message, text)
+            await safe_reply_text(message, _["cant_creator"])
             return
 
-        status = getattr(member, "status", None)
-        if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
-            text = _["creator_only"] if "creator_only" in _ else "ʏᴏᴜ ᴅᴏᴇsɴ'ᴛ sᴇᴇᴍ ᴛᴏ ʙᴇ ᴛʜɪs ɢʀᴏᴜᴘ ᴏᴡɴᴇʀ."
-            await safe_reply_text(message, text)
+        if member.status != ChatMemberStatus.OWNER:
+            await safe_reply_text(message, _["creator_only"])
             return
 
         return await mystic(client, message, *args, **kwargs)
@@ -295,14 +292,11 @@ def CreatorOnlyCB(mystic):
         try:
             member = await app.get_chat_member(CallbackQuery.message.chat.id, uid)
         except:
-            text = _["cant_creator"] if "cant_creator" in _ else "ᴄᴀɴ'ᴛ ᴠᴇʀɪꜰʏ ᴛʜᴇ ᴄʀᴇᴀᴛᴏʀ."
-            await safe_answer_callback(CallbackQuery, text, show_alert=True)
+            await safe_answer_callback(CallbackQuery, _["cant_creator"], show_alert=True)
             return
 
-        status = getattr(member, "status", None)
-        if status not in (ChatMemberStatus.OWNER, ChatMemberStatus.CREATOR):
-            text = _["creator_only_cb"] if "creator_only_cb" in _ else "ʏᴏᴜ ᴅᴏᴇsɴ'ᴛ sᴇᴇᴍ ᴛᴏ ʙᴇ ᴛʜɪs ɢʀᴏᴜᴘ ᴏᴡɴᴇʀ."
-            await safe_answer_callback(CallbackQuery, text, show_alert=True)
+        if member.status != ChatMemberStatus.OWNER:
+            await safe_answer_callback(CallbackQuery, _["creator_only_cb"], show_alert=True)
             return
 
         return await mystic(client, CallbackQuery, *args, **kwargs)
