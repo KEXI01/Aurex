@@ -20,8 +20,8 @@ from strings import get_string
 
 from ..formatters import int_to_alpha
 
+
 async def safe_reply_text(message, text, **kwargs):
-    """Safely send a reply message with proper error handling for rate limits"""
     try:
         return await message.reply_text(text, **kwargs)
     except (SlowmodeWait, FloodWait):
@@ -29,14 +29,15 @@ async def safe_reply_text(message, text, **kwargs):
     except Exception:
         return None
 
+
 async def safe_answer_callback(callback_query, text, show_alert=False):
-    """Safely answer callback queries with proper error handling"""
     try:
         return await callback_query.answer(text, show_alert=show_alert)
     except (SlowmodeWait, FloodWait):
         return None
     except Exception:
         return None
+
 
 def AdminRightsCheck(mystic):
     async def wrapper(client, message):
@@ -59,7 +60,7 @@ def AdminRightsCheck(mystic):
             _ = get_string(language)
         except:
             _ = get_string("en")
-            
+
         if message.sender_chat:
             upl = InlineKeyboardMarkup(
                 [
@@ -73,7 +74,7 @@ def AdminRightsCheck(mystic):
             )
             await safe_reply_text(message, _["general_3"], reply_markup=upl)
             return
-            
+
         if message.command[0][0] == "c":
             chat_id = await get_cmode(message.chat.id)
             if chat_id is None:
@@ -86,11 +87,11 @@ def AdminRightsCheck(mystic):
                 return
         else:
             chat_id = message.chat.id
-            
+
         if not await is_active_chat(chat_id):
             await safe_reply_text(message, _["general_5"])
             return
-            
+
         is_non_admin = await is_nonadmin_chat(message.chat.id)
         if not is_non_admin:
             if message.from_user.id not in SUDOERS:
@@ -134,7 +135,7 @@ def AdminRightsCheck(mystic):
                                 await safe_reply_text(message, _["admin_14"])
                                 return
                             senn = await safe_reply_text(message, text, reply_markup=upl)
-                            if senn:  # Only add to confirmer if message was sent successfully
+                            if senn:
                                 confirmer[chat_id][senn.id] = {
                                     "vidid": vidid,
                                     "file": file,
@@ -170,7 +171,7 @@ def AdminActual(mystic):
             _ = get_string(language)
         except:
             _ = get_string("en")
-            
+
         if message.sender_chat:
             upl = InlineKeyboardMarkup(
                 [
@@ -187,15 +188,14 @@ def AdminActual(mystic):
 
         if message.from_user.id not in SUDOERS:
             try:
-                member = (
-                    await app.get_chat_member(message.chat.id, message.from_user.id)
-                ).privileges
+                member_obj = await app.get_chat_member(message.chat.id, message.from_user.id)
             except:
                 return
-            if not member.can_manage_video_chats:
+            privileges = getattr(member_obj, "privileges", None)
+            if not privileges or not getattr(privileges, "can_manage_video_chats", False):
                 await safe_reply_text(message, _["general_4"])
                 return
-                
+
         return await mystic(client, message, _)
 
     return wrapper
@@ -211,37 +211,36 @@ def ActualAdminCB(mystic):
                     show_alert=True,
                 )
                 return
-                
+
         try:
             language = await get_lang(CallbackQuery.message.chat.id)
             _ = get_string(language)
         except:
             _ = get_string("en")
-            
+
         if CallbackQuery.message.chat.type == ChatType.PRIVATE:
             return await mystic(client, CallbackQuery, _)
-            
+
         is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
         if not is_non_admin:
             try:
-                a = (
-                    await app.get_chat_member(
-                        CallbackQuery.message.chat.id,
-                        CallbackQuery.from_user.id,
-                    )
-                ).privileges
+                member_obj = await app.get_chat_member(
+                    CallbackQuery.message.chat.id,
+                    CallbackQuery.from_user.id,
+                )
             except:
                 await safe_answer_callback(CallbackQuery, _["general_4"], show_alert=True)
                 return
-                
-            if not a.can_manage_video_chats:
+
+            privileges = getattr(member_obj, "privileges", None)
+            if not privileges or not getattr(privileges, "can_manage_video_chats", False):
                 if CallbackQuery.from_user.id not in SUDOERS:
                     token = await int_to_alpha(CallbackQuery.from_user.id)
                     _check = await get_authuser_names(CallbackQuery.from_user.id)
                     if token not in _check:
                         await safe_answer_callback(CallbackQuery, _["general_4"], show_alert=True)
                         return
-                        
+
         return await mystic(client, CallbackQuery, _)
 
     return wrapper
