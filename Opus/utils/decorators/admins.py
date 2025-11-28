@@ -42,7 +42,7 @@ async def safe_answer_callback(callback_query, text, show_alert=False):
 def AdminRightsCheck(mystic):
     async def wrapper(client, message):
         if await is_maintenance() is False:
-            if message.from_user.id not in SUDOERS:
+            if not getattr(message, "from_user", None) or message.from_user.id not in SUDOERS:
                 await safe_reply_text(
                     message,
                     f"{app.mention} ɪs ᴜɴᴅᴇʀ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ, ᴠɪsɪᴛ <a href={SUPPORT_CHAT}>sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ</a> ғᴏʀ ᴋɴᴏᴡɪɴɢ ᴛʜᴇ ʀᴇᴀsᴏɴ.",
@@ -56,12 +56,12 @@ def AdminRightsCheck(mystic):
             pass
 
         try:
-            language = await get_lang(message.chat.id)
+            language = await get_lang(getattr(message.chat, "id", None))
             _ = get_string(language)
         except:
             _ = get_string("en")
 
-        if message.sender_chat:
+        if getattr(message, "sender_chat", None):
             upl = InlineKeyboardMarkup(
                 [
                     [
@@ -75,8 +75,12 @@ def AdminRightsCheck(mystic):
             await safe_reply_text(message, _["general_3"], reply_markup=upl)
             return
 
-        if message.command[0][0] == "c":
-            chat_id = await get_cmode(message.chat.id)
+        cmd0 = None
+        if getattr(message, "command", None):
+            if len(message.command) > 0 and isinstance(message.command[0], str) and message.command[0]:
+                cmd0 = message.command[0]
+        if cmd0 and cmd0[0] == "c":
+            chat_id = await get_cmode(getattr(message.chat, "id", None))
             if chat_id is None:
                 await safe_reply_text(message, _["setting_7"])
                 return
@@ -86,22 +90,25 @@ def AdminRightsCheck(mystic):
                 await safe_reply_text(message, _["cplay_4"])
                 return
         else:
-            chat_id = message.chat.id
+            chat_id = getattr(message.chat, "id", None)
+            if chat_id is None:
+                await safe_reply_text(message, _["general_5"])
+                return
 
         if not await is_active_chat(chat_id):
             await safe_reply_text(message, _["general_5"])
             return
 
-        is_non_admin = await is_nonadmin_chat(message.chat.id)
+        is_non_admin = await is_nonadmin_chat(getattr(message.chat, "id", None))
         if not is_non_admin:
-            if message.from_user.id not in SUDOERS:
-                admins = adminlist.get(message.chat.id)
+            if not getattr(message, "from_user", None) or message.from_user.id not in SUDOERS:
+                admins = adminlist.get(getattr(message.chat, "id", None))
                 if not admins:
                     await safe_reply_text(message, _["admin_13"])
                     return
                 else:
                     if message.from_user.id not in admins:
-                        if await is_skipmode(message.chat.id):
+                        if await is_skipmode(getattr(message.chat, "id", None)):
                             upvote = await get_upvote_count(chat_id)
                             text = f"""<b>ᴀᴅᴍɪɴ ʀɪɢʜᴛs ɴᴇᴇᴅᴇᴅ</b>
 
@@ -109,8 +116,8 @@ def AdminRightsCheck(mystic):
 
 » {upvote} ᴠᴏᴛᴇs ɴᴇᴇᴅᴇᴅ ғᴏʀ ᴘᴇʀғᴏʀᴍɪɴɢ ᴛʜɪs ᴀᴄᴛɪᴏɴ."""
 
-                            command = message.command[0]
-                            if command[0] == "c":
+                            command = cmd0 or ""
+                            if command and command[0] == "c":
                                 command = command[1:]
                             if command == "speed":
                                 await safe_reply_text(message, _["admin_14"])
@@ -153,7 +160,7 @@ def AdminRightsCheck(mystic):
 def AdminActual(mystic):
     async def wrapper(client, message):
         if await is_maintenance() is False:
-            if message.from_user.id not in SUDOERS:
+            if not getattr(message, "from_user", None) or message.from_user.id not in SUDOERS:
                 await safe_reply_text(
                     message,
                     f"{app.mention} ɪs ᴜɴᴅᴇʀ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ, ᴠɪsɪᴛ <a href={SUPPORT_CHAT}>sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ</a> ғᴏʀ ᴋɴᴏᴡɪɴɢ ᴛʜᴇ ʀᴇᴀsᴏɴ.",
@@ -167,12 +174,12 @@ def AdminActual(mystic):
             pass
 
         try:
-            language = await get_lang(message.chat.id)
+            language = await get_lang(getattr(message.chat, "id", None))
             _ = get_string(language)
         except:
             _ = get_string("en")
 
-        if message.sender_chat:
+        if getattr(message, "sender_chat", None):
             upl = InlineKeyboardMarkup(
                 [
                     [
@@ -186,9 +193,9 @@ def AdminActual(mystic):
             await safe_reply_text(message, _["general_3"], reply_markup=upl)
             return
 
-        if message.from_user.id not in SUDOERS:
+        if not getattr(message, "from_user", None) or message.from_user.id not in SUDOERS:
             try:
-                member_obj = await app.get_chat_member(message.chat.id, message.from_user.id)
+                member_obj = await app.get_chat_member(getattr(message.chat, "id", None), message.from_user.id)
             except:
                 return
             privileges = getattr(member_obj, "privileges", None)
@@ -213,19 +220,21 @@ def ActualAdminCB(mystic):
                 return
 
         try:
-            language = await get_lang(CallbackQuery.message.chat.id)
-            _ = get_string(language)
+            cq_msg = getattr(CallbackQuery, "message", None)
+            cq_chat_id = getattr(cq_msg.chat, "id", None) if cq_msg else None
+            language = await get_lang(cq_chat_id) if cq_chat_id is not None else None
+            _ = get_string(language) if language else get_string("en")
         except:
             _ = get_string("en")
 
-        if CallbackQuery.message.chat.type == ChatType.PRIVATE:
+        if not getattr(CallbackQuery, "message", None) or getattr(CallbackQuery.message.chat, "type", None) == ChatType.PRIVATE:
             return await mystic(client, CallbackQuery, _)
 
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
+        is_non_admin = await is_nonadmin_chat(getattr(CallbackQuery.message.chat, "id", None))
         if not is_non_admin:
             try:
                 member_obj = await app.get_chat_member(
-                    CallbackQuery.message.chat.id,
+                    getattr(CallbackQuery.message.chat, "id", None),
                     CallbackQuery.from_user.id,
                 )
             except:
@@ -249,25 +258,25 @@ def ActualAdminCB(mystic):
 def CreatorOnly(mystic):
     async def wrapper(client, message, *args, **kwargs):
         try:
-            language = await get_lang(message.chat.id)
+            language = await get_lang(getattr(message.chat, "id", None))
             _ = get_string(language)
         except:
             _ = get_string("en")
 
-        if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        if getattr(message.chat, "type", None) not in (ChatType.GROUP, ChatType.SUPERGROUP):
             return await mystic(client, message, *args, **kwargs)
 
-        uid = message.from_user.id
+        uid = getattr(message.from_user, "id", None)
         if uid in SUDOERS:
             return await mystic(client, message, *args, **kwargs)
 
         try:
-            member = await app.get_chat_member(message.chat.id, uid)
+            member = await app.get_chat_member(getattr(message.chat, "id", None), uid)
         except:
             await safe_reply_text(message, _["cant_creator"])
             return
 
-        if member.status != ChatMemberStatus.OWNER:
+        if getattr(member, "status", None) != ChatMemberStatus.OWNER:
             await safe_reply_text(message, _["creator_only"])
             return
 
@@ -279,8 +288,10 @@ def CreatorOnly(mystic):
 def CreatorOnlyCB(mystic):
     async def wrapper(client, CallbackQuery, *args, **kwargs):
         try:
-            language = await get_lang(CallbackQuery.message.chat.id)
-            _ = get_string(language)
+            cq_msg = getattr(CallbackQuery, "message", None)
+            cq_chat_id = getattr(cq_msg.chat, "id", None) if cq_msg else None
+            language = await get_lang(cq_chat_id) if cq_chat_id is not None else None
+            _ = get_string(language) if language else get_string("en")
         except:
             _ = get_string("en")
 
@@ -289,12 +300,17 @@ def CreatorOnlyCB(mystic):
             return await mystic(client, CallbackQuery, *args, **kwargs)
 
         try:
-            member = await app.get_chat_member(CallbackQuery.message.chat.id, uid)
+            cq_msg = getattr(CallbackQuery, "message", None)
+            cq_chat_id = getattr(cq_msg.chat, "id", None) if cq_msg else None
+            if cq_chat_id is None:
+                await safe_answer_callback(CallbackQuery, _["cant_creator"], show_alert=True)
+                return
+            member = await app.get_chat_member(cq_chat_id, uid)
         except:
             await safe_answer_callback(CallbackQuery, _["cant_creator"], show_alert=True)
             return
 
-        if member.status != ChatMemberStatus.OWNER:
+        if getattr(member, "status", None) != ChatMemberStatus.OWNER:
             await safe_answer_callback(CallbackQuery, _["creator_only_cb"], show_alert=True)
             return
 
