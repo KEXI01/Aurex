@@ -62,7 +62,7 @@ async def on_left_chat_member(_, message: Message):
             chat_id = message.chat.id
 
             left = (
-                f"<blockquote>● <b>ʟᴇꜰᴛ ɢʀᴏᴜᴘ</b> 🎯\n\n"
+                f"<blockquote><b>• ʟᴇꜰᴛ ɢʀᴏᴜᴘ 🎯</b>\n\n"
                 f"<b>ᴄʜᴀᴛ ᴛɪᴛʟᴇ : {title}</b>\n"
                 f"<b>ᴄʜᴀᴛ ɪᴅ : {chat_id}</b>\n"
                 f"ʀᴇᴍᴏᴠᴇᴅ ʙʏ : {remove_by}🪾"
