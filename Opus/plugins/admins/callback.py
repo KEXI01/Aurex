@@ -191,7 +191,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         except:
             pass
         try:
-            if db.get(chat_id) and db[chat_id][0].get("mystic"):
+            if db.get(chat_id) and db[chat_id] and db[chat_id][0].get("mystic"):
                 await db[chat_id][0]["mystic"].delete()
         except:
             pass
@@ -229,7 +229,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                     )
                     asyncio.create_task(delete_after_delay(sent_msg, 10))
                     try:
-                        if db.get(chat_id) and db[chat_id][0].get("mystic"):
+                        if db.get(chat_id) and db[chat_id] and db[chat_id][0].get("mystic"):
                             await db[chat_id][0]["mystic"].delete()
                     except:
                         pass
@@ -256,12 +256,14 @@ async def del_back_playlist(client, CallbackQuery, _):
             txt = f"≥ ᴛʀᴀᴄᴋ ʀᴇ-ᴘʟᴀʏᴇᴅ\n•ʙʏ : {mention} 🔖"
 
         try:
-            if db.get(chat_id) and db[chat_id][0].get("mystic"):
+            if db.get(chat_id) and db[chat_id] and db[chat_id][0].get("mystic"):
                 await db[chat_id][0]["mystic"].delete()
         except:
             pass
 
         await CallbackQuery.answer()
+        if not check:
+             return
         queued = check[0]["file"]
         title = (check[0]["title"]).title()
         user = check[0]["by"]
@@ -316,7 +318,10 @@ async def del_back_playlist(client, CallbackQuery, _):
                 )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
-            await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            try:
+                await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            except:
+                pass
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
@@ -363,7 +368,10 @@ async def del_back_playlist(client, CallbackQuery, _):
                 )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
-            await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            try:
+                await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            except:
+                pass
             await mystic_dl.delete()
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
@@ -389,7 +397,10 @@ async def del_back_playlist(client, CallbackQuery, _):
                 )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
-            await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            try:
+                await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            except:
+                pass
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
@@ -451,7 +462,10 @@ async def del_back_playlist(client, CallbackQuery, _):
                     )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
-            await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            try:
+                await CallbackQuery.edit_message_text(txt, reply_markup=close_markup(_))
+            except:
+                pass
             sec = check[0].get("seconds") or parse_duration_to_seconds(duration)
             if sec and sec > 0:
                 asyncio.create_task(delete_after_delay(run, sec + 2))
