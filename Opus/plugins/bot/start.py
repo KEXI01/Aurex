@@ -25,7 +25,7 @@ from strings import get_string
 def _user_link(user):
     if user.username:
         return f"<a href='https://t.me/{user.username}'>ᴀ ᴜsᴇʀ</a>"
-    return f"<a href='tg://user?id={user.id}'>ᴘʀᴏғɪʟᴇ ʟɪɴᴋ</a>"
+    return f"<a href='tg://user?id={user.id}'>>ᴀ ᴜsᴇʀ</a>"
 
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
@@ -49,7 +49,7 @@ async def start_pm(client, message: Message, _):
             if await is_on_off(2):
                 return await app.send_message(
                     chat_id=config.LOGGER_ID,
-                    text=f"<blockquote><b>» {_user_link(message.from_user)} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ sᴜᴅᴏʟɪsᴛ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
+                    text=f"<blockquote><b>» {_user_link(message.from_user)} sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ sᴜᴅᴏʟɪsᴛ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
                     disable_web_page_preview=True
                 )
             return
@@ -96,14 +96,14 @@ async def start_pm(client, message: Message, _):
             if await is_on_off(2):
                 return await app.send_message(
                     chat_id=config.LOGGER_ID,
-                    text=f"<blockquote><b>» {_user_link(message.from_user)} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ ᴛʀᴀᴄᴋ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
+                    text=f"<blockquote><b>» {_user_link(message.from_user)} sᴛᴀʀᴛᴇᴅ ᴛʜᴇ sᴛᴏʀᴍ ᴛᴏ ᴄʜᴇᴄᴋ sᴏɴɢ ᴅᴇᴛᴀɪʟs</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
                     disable_web_page_preview=False
                 )
             return
 
     out = private_panel(_)
     await message.reply(
-        text='<blockquote><b>Hᴇʏ, I’ᴍ ꜱᴛᴏʀᴍ, 🧸</b></blockquote>\n<blockquote><b>ʏᴏᴜʀ ᴘᴏᴡᴇʀꜰᴜʟ ᴍᴜꜱɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ. ʙᴜɪʟᴛ ᴛᴏ ʙʀɪɴɢ ᴘᴏᴡᴇꜰᴜʟ ꜱᴏᴜɴᴅ, ꜱᴍᴏᴏᴛʜ ᴄᴏɴᴛʀᴏʟꜱ, ᴀɴᴅ ᴀɴ ᴇʟɪᴛᴇ ʟɪꜱᴛᴇɴɪɴɢ ᴇxᴘᴇʀɪᴇɴᴄᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘꜱ.</b></blockquote>\n<b><blockquote><a href="https://files.catbox.moe/n2l0wd.jpg">✨</a> ᴡʜᴀᴛ ɪ ᴅᴏ:\n• ᴘʟᴀʏ ʜɪɢʜ-Qᴜᴀʟɪᴛʏ ᴍᴜꜱɪᴄ\n• ꜰᴀꜱᴛ ᴄᴏɴᴛʀᴏʟꜱ & ᴄʟᴇᴀɴ ᴘᴇʀꜰᴏʀᴍᴀɴᴄᴇ\n• ᴄᴏᴏʟ ꜰᴇᴀᴛᴜʀᴇꜱ ꜰᴏʀ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴠɪʙᴇꜱ</blockquote></b>\n<blockquote><b>📚 ɴᴇᴇᴅ ʜᴇʟᴘ?\nᴛᴀᴘ ʜᴇʟᴘ ᴛᴏ ꜱᴇᴇ ᴀʟʟ ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ.</b></blockquote>',
+        text='<blockquote><b>Hᴇʏ, I’ᴍ ꜱᴛᴏʀᴍ, 🧸</b></blockquote>\n<blockquote><b>ʏᴏᴜʀ ᴘᴏᴡᴇʀꜰᴜʟ ᴍᴜꜱɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ. ʙᴜɪʟᴛ ᴛᴏ ʙʀɪɴɢ ᴘᴏᴡᴇꜰᴜʟ ꜱᴏᴜɴᴅ, ꜱᴍᴏᴏᴛʜ ᴄᴏɴᴛʀᴏʟꜱ, ᴀɴᴅ ᴀɴ ᴇʟɪᴛᴇ ʟɪꜱᴛᴇɴɪɴɢ ᴇxᴘᴇʀɪᴇɴᴄᴇ ғᴏʀ ʏᴏᴜʀ ɢʀᴏᴜᴘꜱ & ᴄʜᴀɴɴᴇʟs.</b></blockquote>\n<b><blockquote><a href="https://files.catbox.moe/n2l0wd.jpg">✨</a> ᴡʜᴀᴛ ɪ ᴅᴏ:\n• ᴘʟᴀʏs ʜɪɢʜ-Qᴜᴀʟɪᴛʏ ᴍᴜꜱɪᴄ\n• ᴄᴏɴᴛʀᴏʟꜱ ➕ ᴄʟᴇᴀɴ ᴘᴇʀꜰᴏʀᴍᴀɴᴄᴇ\n• ᴄᴏᴏʟ ꜰᴇᴀᴛᴜʀᴇꜱ ꜰᴏʀ ʏᴏᴜʀ ᴄʜɪᴛʏ ᴄʜᴀᴛ ᴠɪʙᴇꜱ</blockquote></b>\n<blockquote><b>📚 ɴᴇᴇᴅ ʜᴇʟᴘ ?\nᴛᴀᴘ ʜᴇʟᴘ ᴛᴏ ꜱᴇᴇ ᴀʟʟ ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ.</b></blockquote>',
         reply_markup=InlineKeyboardMarkup(out),
     )
 
@@ -112,7 +112,7 @@ async def start_pm(client, message: Message, _):
             return
         return await app.send_message(
             chat_id=config.LOGGER_ID,
-            text=f"» {_user_link(message.from_user)} just started the bot.\nuser id : <code>{message.from_user.id}</code>",
+            text=f"» {_user_link(message.from_user)} sᴛᴀʀᴛᴇᴅ ᴛʜᴇ sᴛᴏʀᴍ.\nᴜsᴇʀ ɪᴅ : <code>{message.from_user.id}</code>",
             disable_web_page_preview=True
         )
 
