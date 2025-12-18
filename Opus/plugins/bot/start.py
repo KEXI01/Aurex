@@ -3,7 +3,6 @@ from pyrogram import filters
 from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython import VideosSearch
-
 import config
 from Opus import app
 from Opus.misc import _boot_, SUDOERS
@@ -19,8 +18,14 @@ from Opus.utils.database import (
 from Opus.utils.decorators.language import LanguageStart
 from Opus.utils.formatters import get_readable_time
 from Opus.utils.inline import help_pannel, private_panel, start_panel
-from strings import get_string
 from config import BANNED_USERS
+from strings import get_string
+
+
+def _user_link(user):
+    if user.username:
+        return f"<a href='https://t.me/{user.username}'>ᴀ ᴜsᴇʀ</a>"
+    return f"<a href='tg://user?id={user.id}'>ᴘʀᴏғɪʟᴇ ʟɪɴᴋ</a>"
 
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
@@ -31,7 +36,7 @@ async def start_pm(client, message: Message, _):
     if len(message.text.split()) > 1:
         name = message.text.split(None, 1)[1]
 
-        if name.startswith("help"):
+        if name[0:4] == "help":
             keyboard = help_pannel(_)
             return await message.reply_photo(
                 photo=config.START_IMG_URL,
@@ -39,21 +44,21 @@ async def start_pm(client, message: Message, _):
                 reply_markup=keyboard,
             )
 
-        if name.startswith("sud"):
+        if name[0:3] == "sud":
             await sudoers_list(client=client, message=message, _=_)
             if await is_on_off(2):
                 return await app.send_message(
                     chat_id=config.LOGGER_ID,
-                    text=f"<blockquote><b>» <a href='https://t.me/{message.from_user.username}'>ᴜsᴇʀ</a> ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ sᴜᴅᴏʟɪsᴛ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
-                    disable_web_page_preview=True,
+                    text=f"<blockquote><b>» {_user_link(message.from_user)} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ sᴜᴅᴏʟɪsᴛ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
+                    disable_web_page_preview=True
                 )
             return
 
-        if name.startswith("info_"):
+        if name[0:3] == "inf":
             m = await message.reply_text("🔎")
 
-            video_id = name.replace("info_", "", 1)
-            query = f"https://www.youtube.com/watch?v={video_id}"
+            query = str(name).replace("info_", "", 1)
+            query = f"https://www.youtube.com/watch?v={query}"
 
             results = VideosSearch(query, limit=1)
             data = results.result()
@@ -64,57 +69,52 @@ async def start_pm(client, message: Message, _):
 
             result = data["result"][0]
 
-            title = result.get("title")
-            duration = result.get("duration")
-            views = result.get("viewCount", {}).get("short")
-            published = result.get("publishedTime")
-            channel = result.get("channel", {}).get("name")
-            channellink = result.get("channel", {}).get("link")
-            link = result.get("link")
+            title = result["title"]
+            duration = result["duration"]
+            views = result["viewCount"]["short"]
+            channellink = result["channel"]["link"]
+            channel = result["channel"]["name"]
+            link = result["link"]
+            published = result["publishedTime"]
 
-            text = _["start_6"].format(
-                title,
-                duration,
-                views,
-                published,
-                channellink,
-                channel,
-                app.mention,
+            searched_text = _["start_6"].format(
+                title, duration, views, published, channellink, channel, app.mention
             )
 
-            keyboard = InlineKeyboardMarkup(
+            key = InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(text=_["S_B_8"], url=link),
                         InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
-                    ]
+                    ],
                 ]
             )
 
             await m.delete()
-            await message.reply(text=text, reply_markup=keyboard)
+            await message.reply(text=searched_text, reply_markup=key)
 
             if await is_on_off(2):
                 return await app.send_message(
                     chat_id=config.LOGGER_ID,
-                    text=f"<blockquote><b>» <a href='https://t.me/{message.from_user.username}'>ᴜsᴇʀ</a> ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ ᴛʀᴀᴄᴋ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
-                    disable_web_page_preview=False,
+                    text=f"<blockquote><b>» {_user_link(message.from_user)} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ ᴛʀᴀᴄᴋ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>\n<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code></blockquote>",
+                    disable_web_page_preview=False
                 )
             return
 
     out = private_panel(_)
     await message.reply(
-        text='<blockquote><b>Hᴇʏ, I’ᴍ ꜱᴛᴏʀᴍ, 🧸</b></blockquote>\n<blockquote><b>ʏᴏᴜʀ ᴘᴏᴡᴇʀꜰᴜʟ ᴍᴜꜱɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ.</b></blockquote>',
+        text='<blockquote><b>Hᴇʏ, I’ᴍ ꜱᴛᴏʀᴍ, 🧸</b></blockquote>\n<blockquote><b>ʏᴏᴜʀ ᴘᴏᴡᴇʀꜰᴜʟ ᴍᴜꜱɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ. ʙᴜɪʟᴛ ᴛᴏ ʙʀɪɴɢ ᴘᴏᴡᴇꜰᴜʟ ꜱᴏᴜɴᴅ, ꜱᴍᴏᴏᴛʜ ᴄᴏɴᴛʀᴏʟꜱ, ᴀɴᴅ ᴀɴ ᴇʟɪᴛᴇ ʟɪꜱᴛᴇɴɪɴɢ ᴇxᴘᴇʀɪᴇɴᴄᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘꜱ.</b></blockquote>\n<b><blockquote><a href="https://files.catbox.moe/n2l0wd.jpg">✨</a> ᴡʜᴀᴛ ɪ ᴅᴏ:\n• ᴘʟᴀʏ ʜɪɢʜ-Qᴜᴀʟɪᴛʏ ᴍᴜꜱɪᴄ\n• ꜰᴀꜱᴛ ᴄᴏɴᴛʀᴏʟꜱ & ᴄʟᴇᴀɴ ᴘᴇʀꜰᴏʀᴍᴀɴᴄᴇ\n• ᴄᴏᴏʟ ꜰᴇᴀᴛᴜʀᴇꜱ ꜰᴏʀ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴠɪʙᴇꜱ</blockquote></b>\n<blockquote><b>📚 ɴᴇᴇᴅ ʜᴇʟᴘ?\nᴛᴀᴘ ʜᴇʟᴘ ᴛᴏ ꜱᴇᴇ ᴀʟʟ ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ.</b></blockquote>',
         reply_markup=InlineKeyboardMarkup(out),
     )
 
     if await is_on_off(2):
-        if message.from_user.id not in SUDOERS:
-            return await app.send_message(
-                chat_id=config.LOGGER_ID,
-                text=f"» <a href='https://t.me/{message.from_user.username}'>user</a> just started the bot.\nuser id : <code>{message.from_user.id}</code>",
-                disable_web_page_preview=True,
-            )
+        if message.from_user.id in SUDOERS:
+            return
+        return await app.send_message(
+            chat_id=config.LOGGER_ID,
+            text=f"» {_user_link(message.from_user)} just started the bot.\nuser id : <code>{message.from_user.id}</code>",
+            disable_web_page_preview=True
+        )
 
 
 @app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
