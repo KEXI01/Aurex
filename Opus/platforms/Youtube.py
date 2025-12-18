@@ -5,10 +5,12 @@ import asyncio
 from typing import Dict, List, Optional, Tuple, Union
 
 import yt_dlp
+import httpx
 from pyrogram.types import Message
 from pyrogram.enums import MessageEntityType
 from youtubesearchpython.__future__ import VideosSearch
 
+from Opus.utils.database import is_on_off
 from Opus.utils.formatters import time_to_seconds, seconds_to_min
 from Opus.utils.downloader import (
     download_audio,
@@ -64,7 +66,7 @@ class YouTubeAPI:
         vid = self._extract_id(link)
         if vid:
             return self.base_url + vid
-        return link.strip()
+        return link.split("&")[0].strip()
 
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
@@ -101,6 +103,7 @@ class YouTubeAPI:
         info = await self._dump(prepared)
         if info:
             info["webpage_url"] = info.get("webpage_url", prepared)
+            info["is_live"] = bool(info.get("is_live") or info.get("live_status") == "is_live")
             return info
 
         data = await VideosSearch(query, limit=1).next()
@@ -140,10 +143,34 @@ class YouTubeAPI:
         ds = int(seconds) if isinstance(seconds, int) else 0
 
         thumb = (
-            info.get("thumbnail", "")
+            info.get("thumbnail")
+            or info.get("thumbnails", [{}])[0].get("url", "")
         ).split("?")[0]
 
         return info.get("title", ""), duration, ds, thumb, info.get("id", "")
+
+    async def title(self, link: str, videoid: Union[str, bool, None] = None) -> str:
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        return info.get("title", "") if info else ""
+
+    async def duration(self, link: str, videoid: Union[str, bool, None] = None):
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        if not info:
+            return None
+        if info.get("is_live"):
+            return info.get("duration")
+        if isinstance(info.get("duration"), int):
+            return seconds_to_min(info["duration"])
+        return info.get("duration")
+
+    async def thumbnail(self, link: str, videoid: Union[str, bool, None] = None) -> str:
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        if not info:
+            return ""
+        return (
+            info.get("thumbnail")
+            or info.get("thumbnails", [{}])[0].get("url", "")
+        ).split("?")[0]
 
     async def video(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[int, str]:
         link = self._prepare_link(link, videoid)
@@ -184,7 +211,10 @@ class YouTubeAPI:
         seconds = info.get("duration")
         duration = seconds if is_live or seconds is None else seconds_to_min(seconds)
 
-        thumb = info.get("thumbnail", "").split("?")[0]
+        thumb = (
+            info.get("thumbnail")
+            or info.get("thumbnails", [{}])[0].get("url", "")
+        ).split("?")[0]
 
         return (
             {
@@ -195,6 +225,45 @@ class YouTubeAPI:
                 "thumb": thumb,
             },
             info.get("id", ""),
+        )
+
+    async def formats(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[List[Dict], str]:
+        link = self._prepare_link(link, videoid)
+        opts = {"quiet": True}
+        cf = _cookiefile_path()
+        if cf:
+            opts["cookiefile"] = cf
+
+        out: List[Dict] = []
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(link, download=False)
+            for fmt in info.get("formats", []):
+                if "dash" in str(fmt.get("format", "")).lower():
+                    continue
+                size = fmt.get("filesize") or fmt.get("filesize_approx")
+                if not size:
+                    continue
+                out.append(
+                    {
+                        "format": fmt.get("format"),
+                        "filesize": size,
+                        "format_id": fmt.get("format_id"),
+                        "ext": fmt.get("ext"),
+                        "format_note": fmt.get("format_note"),
+                        "yturl": link,
+                    }
+                )
+        return out, link
+
+    async def slider(self, link: str, query_type: int, videoid: Union[str, bool, None] = None) -> Tuple[str, Optional[str], str, str]:
+        data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
+        results = data.get("result", [])
+        r = results[query_type]
+        return (
+            r.get("title", ""),
+            r.get("duration"),
+            r.get("thumbnails", [{}])[0].get("url", "").split("?")[0],
+            r.get("id", ""),
         )
 
     async def download(
