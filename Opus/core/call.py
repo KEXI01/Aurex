@@ -281,11 +281,10 @@ class Call(PyTgCalls):
             pass
 
     async def stream_call(self, link):
-        # Probe VC capability in the log group
         assistant = await group_assistant(self, config.LOGGER_ID)
         try:
             await assistant.join_group_call(config.LOGGER_ID, dynamic_media_stream(link, video=True))
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(2)
             try:
                 await assistant.leave_group_call(config.LOGGER_ID)
             except (NoActiveGroupCall, NotInGroupCallError):
@@ -354,79 +353,6 @@ class Call(PyTgCalls):
             else:
                 autoend.pop(chat_id, None)
 
-    
-
-
-                img = await get_thumb(videoid)
-                button = stream_markup(_, chat_id)
-                caption_text = _["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{videoid}",
-                    title[:23],
-                    check[0]["dur"],
-                    user,
-                )
-                
-                if thumb_mode:
-                    run = await app.send_photo(
-                        chat_id=original_chat_id,
-       stream = dynamic_media_stream(videoid, video=is_video)
-                if not await self.attempt_stream(client, chat_id, stream):
-                    try:
-                        await app.send_message(original_chat_id, text=_["call_6"])
-                    except:
-                        pass
-                    await _clear_(chat_id)
-                    return
-                button = stream_markup(_, chat_id)
-                caption_text = _["stream_2"].format(user)
-                
-                if thumb_mode:
-                    run = await app.send_photo(
-                        chat_id=original_chat_id,
-                        photo=config.STREAM_IMG_URL,
-                        caption=caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                else:
-                    run = await app.send_message(
-                        chat_id=original_chat_id,
-                        text=caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                        disable_web_page_preview=True,
-                    )
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "tg"
-
-            else:
-                stream = dynamic_media_stream(queued, video=is_video)
-
-                if not await self.attempt_stream(client, chat_id, stream):
-                    try:
-                        await app.send_message(original_chat_id, text=_["call_6"])
-                    except:
-                        pass
-                    await _clear_(chat_id)
-                    return
-
-                if videoid == "telegram":
-                    button = stream_markup(_, chat_id)
-                    caption_text = _["stream_1"].format(config.SUPPORT_CHAT, title[:23], check[0]["dur"], user)
-                    
-                    if thumb_mode:
-                        run = await app.send_photo(
-                            chat_id=original_chat_id,
-                            photo=(config.TELEGRAM_AUDIO_URL if str(streamtype) == "audio" else config.TELEGRAM_VIDEO_URL),
-                            caption=caption_text,
-                            reply_markup=InlineKeyboardMarkup(button),
-                        )
-                    else:
-                        run = await app.send_message(
-                            chat_id=original_chat_id,
-                            text=caption_text,
-                            reply_markup=InlineKeyboardMarkup(button),
-                            disable_web_page_preview=True,
-
-    
     async def change_stream(self, client, chat_id):
         if chat_id not in db_locks:
             db_locks[chat_id] = asyncio.Lock()
