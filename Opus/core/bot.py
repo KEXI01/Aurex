@@ -1,7 +1,8 @@
 import asyncio
-import uvloop
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-asyncio.set_event_loop(asyncio.new_event_loop())
+import sys
+if sys.platform != "win32":
+    import uvloop
+    uvloop.install()
 
 import os
 import sys
