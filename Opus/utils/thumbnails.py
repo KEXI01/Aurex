@@ -4,7 +4,7 @@ import aiofiles
 import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
-from youtubesearchpython.__future__ import VideosSearch
+from youtubesearchpython.future import VideosSearch
 from config import FAILED
 
 APPLE_TEMPLATE_PATH = "Opus/assets/apple_music.png"
