@@ -11,7 +11,7 @@ from config import API_URL
 from pyrogram.types import Message
 from pyrogram.enums import MessageEntityType
 from typing import Dict, List, Optional, Tuple, Union
-from youtubesearchpython.__future__ import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 from Opus.utils.database import is_on_off
 from Opus.utils.formatters import time_to_seconds, seconds_to_min
