@@ -14,7 +14,7 @@ py-tgcalls==1.2.9
 ntgcalls==1.1.2
 numpy
 gunicorn
-pyrofork
+pyrotgfork
 python-dotenv
 pyyaml
 requests
@@ -32,4 +32,4 @@ watchdog
 orjson
 uvloop==0.21.0; sys_platform != "win32"
 git+https://github.com/yt-dlp/yt-dlp.git@master
-git+https://github.com/BillaSpace/youtube-search-python.git
+git+https://github.com/BillaSpace/youtube-search-python.git@legacy
