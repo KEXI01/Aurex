@@ -3,7 +3,7 @@ from pyrogram.types import (
     InlineKeyboardMarkup,
     InlineQueryResultPhoto,
 )
-from youtubesearchpython.__future__ import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 from Opus import app
 from Opus.utils.inlinequery import answer
