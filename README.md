@@ -4,7 +4,7 @@
   <a href="https://github.com/KEXI01/Aurex/stargazers"><img src="https://img.shields.io/github/stars/KEXI01/Aurex?style=for-the-badge&color=yellow" /></a>
   <a href="https://github.com/KEXI01/Aurex/fork"><img src="https://img.shields.io/github/forks/KEXI01/Aurex?style=for-the-badge&color=orange" /></a>
   <a href="https://github.com/KEXI01/Aurex/graphs/contributors"><img src="https://img.shields.io/github/contributors/KEXI01/Aurex?style=for-the-badge&color=blueviolet" /></a>
-  <a href="https://github.com/KEXI01/Aurex"><img src="https://img.shields.io/badge/pyrofork-2.3.69-ff3366?style=for-the-badge&logo=telegram&logoColor=white" /></a>
+  <a href="https://github.com/KEXI01/Aurex"><img src="https://img.shields.io/badge/pyrotgfork-2.2.16-ff3366?style=for-the-badge&logo=telegram&logoColor=white" /></a>
   <a href="https://www.mongodb.com/"><img src="https://img.shields.io/badge/MongoDB-Enabled-success?style=for-the-badge&logo=mongodb&logoColor=white" /></a>
   <a href="#"><img src="https://img.shields.io/badge/License-GPL-blue?style=for-the-badge" /></a>
 </p>
