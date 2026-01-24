@@ -15,6 +15,7 @@ CACHE_DIR = "cache"
 COOKIE_PATH = "Opus/assets/cookies.txt"
 CHUNK_SIZE = 4 * 1024 * 1024
 USE_API = True
+CHUNK_DOWNLOADS = False
 
 _client: Optional[httpx.AsyncClient] = None
 _client_lock = asyncio.Lock()
@@ -141,6 +142,18 @@ async def _stream_download(url: str, out_path: str, timeout: float) -> bool:
     except Exception:
         return False
 
+async def _direct_download(url: str, out_path: str, timeout: float) -> bool:
+    try:
+        client = await _get_client()
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        r = await client.get(url, timeout=timeout)
+        if r.status_code != 200:
+            return False
+        async with aiofiles.open(out_path, "wb") as f:
+            await f.write(r.content)
+        return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    except Exception:
+        return False
 
 async def api_download_audio(video_id: str) -> Optional[str]:
     if not USE_API or not API_URL:
@@ -149,32 +162,28 @@ async def api_download_audio(video_id: str) -> Optional[str]:
         client = await _get_client()
         base = API_URL.rstrip("/")
         yurl = f"https://youtu.be/{video_id}"
-
-        r = await client.get(
-            base,
-            params={"url": yurl},
-            timeout=60.0,
-        )
+        r = await client.get(base, params={"url": yurl}, timeout=60.0)
         if r.status_code != 200:
             return None
-
         data = r.json()
         if data.get("status") != 200 or data.get("successful") != "success":
             return None
 
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
-
         dl_url = download_info.get("url")
         filename = download_info.get("filename") or f"{video_id}.mp3"
+
         if not dl_url:
             return None
 
         _, ext = os.path.splitext(filename)
         ext = (ext or ".mp3").lstrip(".") or "mp3"
-
         out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
-        ok = await _stream_download(dl_url, out_path, timeout=120.0)
+        if CHUNK_DOWNLOADS:
+            ok = await _stream_download(dl_url, out_path, timeout=120.0)
+        else:
+            ok = await _direct_download(dl_url, out_path, timeout=120.0)
         if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             return out_path
     except Exception:
@@ -189,34 +198,33 @@ async def api_download_video(video_id: str, wait_timeout: float = 160.0) -> Opti
         client = await _get_client()
         base = API_URL.rstrip("/")
         yurl = f"https://youtu.be/{video_id}"
-
         r = await client.get(
             base,
             params={"url": yurl, "format": "mp4"},
-            timeout=wait_timeout,
+            timeout=wait_timeout
         )
         if r.status_code != 200:
             return None
-
         data = r.json()
         if data.get("status") != 200 or data.get("successful") != "success":
             return None
 
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
-
         dl_url = download_info.get("url")
         filename = download_info.get("filename") or f"{video_id}.mp4"
+
         if not dl_url:
             return None
 
         _, ext = os.path.splitext(filename)
         ext = (ext or ".mp4").lstrip(".") or "mp4"
-
         out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
         dl_timeout = max(wait_timeout, 60.0)
-
-        ok = await _stream_download(dl_url, out_path, timeout=dl_timeout)
+        if CHUNK_DOWNLOADS:
+            ok = await _stream_download(dl_url, out_path, timeout=dl_timeout)
+        else:
+            ok = await _direct_download(dl_url, out_path, timeout=dl_timeout)
         if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             return out_path
     except Exception:
