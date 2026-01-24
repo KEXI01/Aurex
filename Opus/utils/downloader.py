@@ -13,7 +13,7 @@ from config import API_URL
 DOWNLOAD_DIR = "downloads"
 CACHE_DIR = "cache"
 COOKIE_PATH = "Opus/assets/cookies.txt"
-CHUNK_SIZE = 8 * 1024 * 1024
+CHUNK_SIZE = 4 * 1024 * 1024
 USE_API = True
 CHUNK_DOWNLOADS = True
 
