@@ -146,24 +146,33 @@ async def api_download_audio(video_id: str) -> Optional[str]:
     if not USE_API or not API_URL:
         return None
     try:
+        client = await _get_client()
+        base = API_URL.rstrip("/")
         yurl = f"https://youtu.be/{video_id}"
-        data = await _api_fetch_json(
-            "",
+
+        r = await client.get(
+            base,
             params={"url": yurl},
             timeout=60.0,
         )
-        if not data:
+        if r.status_code != 200:
             return None
+
+        data = r.json()
         if data.get("status") != 200 or data.get("successful") != "success":
             return None
+
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
+
         dl_url = download_info.get("url")
         filename = download_info.get("filename") or f"{video_id}.mp3"
         if not dl_url:
             return None
+
         _, ext = os.path.splitext(filename)
         ext = (ext or ".mp3").lstrip(".") or "mp3"
+
         out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
         ok = await _stream_download(dl_url, out_path, timeout=120.0)
         if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
@@ -177,26 +186,36 @@ async def api_download_video(video_id: str, wait_timeout: float = 160.0) -> Opti
     if not USE_API or not API_URL:
         return None
     try:
+        client = await _get_client()
+        base = API_URL.rstrip("/")
         yurl = f"https://youtu.be/{video_id}"
-        data = await _api_fetch_json(
-            "",
+
+        r = await client.get(
+            base,
             params={"url": yurl, "format": "mp4"},
             timeout=wait_timeout,
         )
-        if not data:
+        if r.status_code != 200:
             return None
+
+        data = r.json()
         if data.get("status") != 200 or data.get("successful") != "success":
             return None
+
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
+
         dl_url = download_info.get("url")
         filename = download_info.get("filename") or f"{video_id}.mp4"
         if not dl_url:
             return None
+
         _, ext = os.path.splitext(filename)
         ext = (ext or ".mp4").lstrip(".") or "mp4"
+
         out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
         dl_timeout = max(wait_timeout, 60.0)
+
         ok = await _stream_download(dl_url, out_path, timeout=dl_timeout)
         if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             return out_path
