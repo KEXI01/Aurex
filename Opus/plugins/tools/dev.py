@@ -13,12 +13,82 @@ from config import OWNER_ID, LOGGER_ID
 from Opus import app
 
 
+PROTECTED_PATTERNS = [
+    "__main__.py",
+    ".session",
+    ".session-journal",
+    "config.py",
+    ".env",
+    "venv",
+    "database.py",
+    "__pycache__",
+]
+
+PROTECTED_MSG = (
+    "<b>⚠️ Protected resource detected.</b>\n"
+    "<i>This eval/shell command was blocked to protect important files.</i>"
+)
+
+
+def is_protected_command(text: str) -> bool:
+    if not text:
+        return False
+    lower = text.lower()
+    for pattern in PROTECTED_PATTERNS:
+        if pattern.lower() in lower:
+            return True
+    return False
+
+
 async def aexec(code, client, message):
+    safe_builtins = {
+        "print": print,
+        "len": len,
+        "range": range,
+        "enumerate": enumerate,
+        "int": int,
+        "str": str,
+        "float": float,
+        "bool": bool,
+        "list": list,
+        "dict": dict,
+        "set": set,
+        "tuple": tuple,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "abs": abs,
+        "sorted": sorted,
+        "__build_class__": __build_class__,
+        "Exception": Exception,
+    }
+
+    def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+        blocked = {
+            "os",
+            "sys",
+            "subprocess",
+            "pathlib",
+            "config",
+            "dotenv",
+            "inspect",
+        }
+        if name in blocked:
+            raise ImportError("Access to this module is blocked in eval.")
+        return __import__(name, globals, locals, fromlist, level)
+
+    safe_builtins["__import__"] = safe_import
+
+    safe_globals = {
+        "__builtins__": safe_builtins,
+    }
+
     exec(
         "async def __aexec(client, message): "
-        + "".join(f"\n {a}" for a in code.split("\n"))
+        + "".join(f"\n {a}" for a in code.split("\n")),
+        safe_globals,
     )
-    return await locals()["__aexec"](client, message)
+    return await safe_globals["__aexec"](client, message)
 
 
 async def edit_or_reply(msg: Message, **kwargs):
@@ -50,12 +120,18 @@ def private_and_owner(filter, client: Client, message: Message):
 )
 async def executor(client: Client, message: Message):
     if len(message.command) < 2:
-        return await edit_or_reply(message, text="<b>ᴡʜᴀᴛ ʏᴏᴜ ᴡᴀɴɴᴀ ᴇxᴇᴄᴜᴛᴇ ʙᴀʙʏ ?</b>")
+        return await edit_or_reply(
+            message,
+            text="<b>ᴡʜᴀᴛ ʏᴏᴜ ᴡᴀɴɴᴀ ᴇxᴇᴄᴜᴛᴇ ʙᴀʙʏ ?</b>",
+        )
 
     try:
         cmd = message.text.split(" ", maxsplit=1)[1]
     except IndexError:
         return await message.delete()
+
+    if is_protected_command(cmd):
+        return await edit_or_reply(message, text=PROTECTED_MSG)
 
     t1 = time()
     old_stderr = sys.stderr
@@ -109,14 +185,21 @@ async def executor(client: Client, message: Message):
 
         await message.reply_document(
             document=filename,
-            caption=f"<b>⥤ ᴇᴠᴀʟ :</b>\n<code>{cmd[0:980]}</code>\n\n<b>⥤ ʀᴇsᴜʟᴛ :</b>\nAttached Document",
+            caption=(
+                f"<b>⥤ ᴇᴠᴀʟ :</b>\n<code>{cmd[0:980]}</code>\n\n"
+                f"<b>⥤ ʀᴇsᴜʟᴛ :</b>\nAttached Document"
+            ),
             quote=False,
             reply_markup=keyboard,
         )
         await message.delete()
         os.remove(filename)
     else:
-        await edit_or_reply(message, text=final_output, reply_markup=keyboard)
+        await edit_or_reply(
+            message,
+            text=final_output,
+            reply_markup=keyboard,
+        )
 
 
 @app.on_edited_message(
@@ -135,23 +218,42 @@ async def executor(client: Client, message: Message):
 )
 async def shellrunner(_, message: Message):
     if len(message.command) < 2:
-        return await edit_or_reply(message, text="<b>ᴇxᴀᴍᴩʟᴇ :</b>\n/sh git pull")
+        return await edit_or_reply(
+            message,
+            text="<b>ᴇxᴀᴍᴩʟᴇ :</b>\n/sh git pull",
+        )
 
     text = message.text.split(None, 1)[1]
+
+    if is_protected_command(text):
+        return await edit_or_reply(message, text=PROTECTED_MSG)
+
+    safe_env = {
+        "PATH": os.environ.get("PATH", ""),
+    }
 
     if "\n" in text:
         code = text.split("\n")
         output = ""
         for x in code:
+            x = x.strip()
+            if not x:
+                continue
+
+            if is_protected_command(x):
+                output += f"<b>{x}</b>\n[blocked: protected resource]\n\n"
+                continue
+
             shell = re.split(r""" (?=(?:[^'"]|'[^']*'|"[^"]*")*$)""", x)
             try:
                 process = subprocess.Popen(
                     shell,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=safe_env,
                 )
                 stdout, stderr = process.communicate()
-                output += f"<b>{x}</b>\n{stdout.decode()}\n{stderr.decode()}"
+                output += f"<b>{x}</b>\n{stdout.decode()}\n{stderr.decode()}\n"
             except Exception as err:
                 return await edit_or_reply(
                     message, text=f"<b>ERROR :</b>\n<pre>{err}</pre>"
@@ -164,6 +266,7 @@ async def shellrunner(_, message: Message):
                 shell,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=safe_env,
             )
             stdout, stderr = process.communicate()
             output = stdout.decode() + stderr.decode()
@@ -181,7 +284,7 @@ async def shellrunner(_, message: Message):
     if not output.strip():
         output = "None"
 
-    if len(output) > 4096:
+    if len(output) > 4090:
         with open("output.txt", "w+", encoding="utf-8") as file:
             file.write(output)
         await app.send_document(
@@ -192,7 +295,10 @@ async def shellrunner(_, message: Message):
         )
         os.remove("output.txt")
     else:
-        await edit_or_reply(message, text=f"<b>OUTPUT :</b>\n<pre>{output}</pre>")
+        await edit_or_reply(
+            message,
+            text=f"<b>OUTPUT :</b>\n<pre>{output}</pre>",
+        )
 
     await message.stop_propagation()
 
@@ -211,7 +317,8 @@ async def forceclose_command(_, CallbackQuery):
     if CallbackQuery.from_user.id != int(user_id):
         try:
             return await CallbackQuery.answer(
-                "» ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
+                "» ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ».",
+                show_alert=True,
             )
         except:
             return
