@@ -79,7 +79,7 @@ def _ytdlp_base_opts() -> Dict[str, Union[str, int, bool]]:
         "overwrites": True,
         "continuedl": True,
         "noprogress": True,
-        "concurrent_fragment_downloads": 10,
+        "concurrent_fragment_downloads": 42,
         "http_chunk_size": 1 << 20,
         "socket_timeout": 30,
         "retries": 1,
@@ -107,7 +107,7 @@ async def _get_client() -> httpx.AsyncClient:
     return _client
 
 
-async def _api_fetch_json(path: str, params: dict | None = None, timeout: float = 30.0) -> Optional[dict]:
+async def _api_fetch_json(path: str, params: dict | None = None, timeout: float = 80.0) -> Optional[dict]:
     if not USE_API or not API_URL:
         return None
     try:
@@ -182,7 +182,7 @@ async def api_download_audio(video_id: str) -> Optional[str]:
         ext = "m4a"
         out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
         if CHUNK_DOWNLOADS:
-            ok = await _stream_download(dl_url, out_path, timeout=30.0)
+            ok = await _stream_download(dl_url, out_path, timeout=60.0)
         else:
             ok = await _direct_download(dl_url, out_path, timeout=60.0)
         if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
