@@ -1,9 +1,3 @@
-import asyncio
-import sys
-if sys.platform != "win32":
-    import uvloop
-    uvloop.install()
-
 import os
 import sys
 from pyrogram import Client, errors
