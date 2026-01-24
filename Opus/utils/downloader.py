@@ -13,7 +13,7 @@ from config import API_URL
 DOWNLOAD_DIR = "downloads"
 CACHE_DIR = "cache"
 COOKIE_PATH = "Opus/assets/cookies.txt"
-CHUNK_SIZE = 8 * 1024 * 1024
+CHUNK_SIZE = 4 * 1024 * 1024
 USE_API = True
 
 _client: Optional[httpx.AsyncClient] = None
@@ -154,7 +154,7 @@ async def api_download_audio(video_id: str) -> Optional[str]:
         )
         if not data:
             return None
-        if data.get("status") != 200:
+        if data.get("status") != 200 or data.get("successful") != "success":
             return None
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
@@ -185,7 +185,7 @@ async def api_download_video(video_id: str, wait_timeout: float = 160.0) -> Opti
         )
         if not data:
             return None
-        if data.get("status") != 200:
+        if data.get("status") != 200 or data.get("successful") != "success":
             return None
         payload = data.get("data") or {}
         download_info = payload.get("download") or {}
