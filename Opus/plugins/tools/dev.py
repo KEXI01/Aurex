@@ -61,6 +61,8 @@ async def aexec(code, client, message):
         "sorted": sorted,
         "__build_class__": __build_class__,
         "Exception": Exception,
+        "exit": lambda *args, **kwargs: None,
+        "quit": lambda *args, **kwargs: None,
     }
 
     def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
