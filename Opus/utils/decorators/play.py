@@ -8,6 +8,9 @@ from pyrogram.errors import (
     UserNotParticipant,
     ChannelsTooMuch,
     RPCError,
+    InviteHashExpired,
+    ChannelInvalid,
+    YouBlockedUser,
 )
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -119,12 +122,41 @@ def PlayWrapper(command):
             try:
                 bot_member = await app.get_chat_member(chat_id, (await app.get_me()).id)
                 if bot_member.status != ChatMemberStatus.ADMINISTRATOR:
-                    return await safe_reply(message, "🛑 Please promote Storm Music with Proper admin rights to start Streaming 🎵.")
+                    return await safe_reply(
+                        message,
+                        "🛑 Please promote Storm Music with Proper admin rights to start Streaming 🎵."
+                    )
             except ChatAdminRequired:
                 pass
             except Exception:
                 pass
 
+            async def get_invite_link(force_new=False):
+                invite_link = None
+                if not force_new:
+                    invite_link = links.get(chat_id)
+
+                if not invite_link:
+                    if message.chat.username:
+                        invite_link = message.chat.username
+                    else:
+                        try:
+                            invite_link = await app.export_chat_invite_link(chat_id)
+                        except ChatAdminRequired:
+                            await safe_reply(message, _["call_1"])
+                            return None
+                        except Exception as e:
+                            await safe_reply(
+                                message,
+                                _["call_3"].format(app.mention, type(e).__name__),
+                            )
+                            return None
+
+                if isinstance(invite_link, str) and invite_link.startswith("https://t.me/+"):
+                    invite_link = invite_link.replace("https://t.me/+", "https://t.me/joinchat/")
+
+                links[chat_id] = invite_link
+                return invite_link
 
             if not await is_active_chat(chat_id):
                 userbot = await get_assistant(chat_id)
@@ -137,52 +169,102 @@ def PlayWrapper(command):
                             _["call_2"].format(app.mention, userbot.id, userbot.name, userbot.username)
                         )
                 except ChatAdminRequired:
-                    return await safe_reply(message, "🛑 Storm Music must have admin rights to check assistant's membership status.")
+                    return await safe_reply(
+                        message,
+                        "🛑 Storm Music must have admin rights to check assistant's membership status."
+                    )
                 except UserNotParticipant:
-                    invite_link = links.get(chat_id)
-
+                    invite_link = await get_invite_link(False)
                     if not invite_link:
-                        if message.chat.username:
-                            invite_link = message.chat.username
-                        else:
-                            try:
-                                invite_link = await app.export_chat_invite_link(chat_id)
-                            except ChatAdminRequired:
-                                return await safe_reply(message, _["call_1"])
-                            except Exception as e:
-                                return await safe_reply(message, _["call_3"].format(app.mention, type(e).__name__))
+                        return
 
-                    if invite_link and invite_link.startswith("https://t.me/+"):
-                        invite_link = invite_link.replace("https://t.me/+", "https://t.me/joinchat/")
-
-                    links[chat_id] = invite_link
                     msg = await safe_reply(message, _["call_4"].format(app.mention))
 
-                    try:
-                        await userbot.join_chat(invite_link) 
-                    except InviteRequestSent:
+                    joined = False
+                    for attempt in range(2):
                         try:
-                            await app.approve_chat_join_request(chat_id, userbot.id)
-                        except Exception as e:
-                            return await safe_reply(message, _["call_3"].format(app.mention, type(e).__name__))
-                        await asyncio.sleep(1)
-                        await msg.edit(_["call_5"].format(app.mention))
-                    except UserAlreadyParticipant:
-                        pass
-                    except ChannelsTooMuch:
-                        note = f"<b>Too many joined groups/channels</b>\n🧹 Please run /cleanassistants to clean."
-                        for sudo_id in SUDOERS:
+                            await userbot.join_chat(invite_link)
+                            joined = True
+                            break
+                        except InviteRequestSent:
                             try:
-                                await app.send_message(sudo_id, note)
-                            except:
-                                pass
-                        return await safe_reply(message, "🚫 Assistant has joined too many chats.")
-                    except ChatAdminRequired:
-                        return await safe_reply(message, _["call_1"])
-                    except RPCError as e:
-                        return await safe_reply(message, f"🚫 RPC Error occurred: <code>{e}</code>")
-                    except Exception as e:
-                        return await safe_reply(message, _["call_3"].format(app.mention, type(e).__name__))
+                                await app.approve_chat_join_request(chat_id, userbot.id)
+                            except Exception as e:
+                                return await safe_reply(
+                                    message,
+                                    _["call_3"].format(app.mention, type(e).__name__),
+                                )
+                            await asyncio.sleep(1)
+                            joined = True
+                            break
+                        except UserAlreadyParticipant:
+                            joined = True
+                            break
+                        except ChannelsTooMuch:
+                            note = (
+                                "<b>Too many joined groups/channels</b>\n"
+                                "🧹 Please run /cleanassistants to clean."
+                            )
+                            for sudo_id in SUDOERS:
+                                try:
+                                    await app.send_message(sudo_id, note)
+                                except:
+                                    pass
+                            return await safe_reply(
+                                message,
+                                "🚫 Assistant has joined too many chats.",
+                            )
+                        except YouBlockedUser:
+                            return await safe_reply(
+                                message,
+                                _["call_3"].format(app.mention, "Blocked")
+                            )
+                        except (InviteHashExpired, ChannelInvalid):
+                            links.pop(chat_id, None)
+                            if attempt == 0:
+                                invite_link = await get_invite_link(True)
+                                if not invite_link:
+                                    return
+                                continue
+                            return await safe_reply(
+                                message,
+                                _["call_3"].format(app.mention, "InviteErr")
+                            )
+                        except ChatAdminRequired:
+                            return await safe_reply(message, _["call_1"])
+                        except RPCError as e:
+                            s = str(e)
+                            if ("INVITE_HASH_EXPIRED" in s) or ("CHANNEL_INVALID" in s):
+                                links.pop(chat_id, None)
+                                if attempt == 0:
+                                    invite_link = await get_invite_link(True)
+                                    if not invite_link:
+                                        return
+                                    continue
+                                return await safe_reply(
+                                    message,
+                                    _["call_3"].format(app.mention, "InviteErr")
+                                )
+                            if "YOU_BLOCKED_USER" in s:
+                                return await safe_reply(
+                                    message,
+                                    _["call_3"].format(app.mention, "Blocked")
+                                )
+                            return await safe_reply(
+                                message,
+                                _["call_3"].format(app.mention, type(e).__name__),
+                            )
+                        except Exception as e:
+                            return await safe_reply(
+                                message,
+                                _["call_3"].format(app.mention, type(e).__name__),
+                            )
+
+                    if joined:
+                        try:
+                            await msg.edit(_["call_5"].format(app.mention))
+                        except:
+                            pass
 
             return await command(
                 client,
