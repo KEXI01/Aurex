@@ -61,8 +61,6 @@ async def aexec(code, client, message):
         "sorted": sorted,
         "__build_class__": __build_class__,
         "Exception": Exception,
-        "exit": lambda *args, **kwargs: None,
-        "quit": lambda *args, **kwargs: None,
     }
 
     def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -134,6 +132,14 @@ async def executor(client: Client, message: Message):
 
     if is_protected_command(cmd):
         return await edit_or_reply(message, text=PROTECTED_MSG)
+
+    normalized = cmd.strip()
+    if normalized in ("exit", "exit()", "exit ()", "quit", "quit()", "quit ()"):
+        await edit_or_reply(
+            message,
+            text="<b>Shutting down…</b>",
+        )
+        os._exit(0)
 
     t1 = time()
     old_stderr = sys.stderr
