@@ -12,6 +12,7 @@ from pyrogram.types import Message
 from pyrogram.enums import MessageEntityType
 from typing import Dict, List, Optional, Tuple, Union
 from youtubesearchpython.future import VideosSearch
+from urllib.parse import urlparse
 
 from Opus.utils.database import is_on_off
 from Opus.utils.formatters import time_to_seconds, seconds_to_min
@@ -46,7 +47,15 @@ async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(
         *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    return await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return b"", b""
+    return stdout, stderr
 
 
 def _safe_filename(name: str) -> str:
@@ -70,18 +79,28 @@ class YouTubeAPI:
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
             link = self.base_url + videoid.strip()
+        link = (link or "").strip()
+        if len(link) > 2048:
+            raise ValueError("Invalid link")
+        if self._url_pattern.search(link):
+            parsed = urlparse(link)
+            host = (parsed.hostname or "").lower()
+            if not (host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")):
+                raise ValueError("Unsupported host")
         if "youtu.be" in link:
             link = self.base_url + link.split("/")[-1].split("?")[0]
         elif "/live/" in link:
             link = self.base_url + link.split("/live/")[-1].split("?")[0]
         elif "/shorts/" in link:
             link = self.base_url + link.split("/shorts/")[-1].split("?")[0]
-       
         return link.split("&")[0]
 
-
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
-        return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
+        try:
+            prepared = self._prepare_link(link, videoid)
+        except ValueError:
+            return False
+        return bool(self._url_pattern.search(prepared))
 
     async def url(self, message: Message) -> Optional[str]:
         msgs = [message] + ([message.reply_to_message] if message.reply_to_message else [])
@@ -96,7 +115,10 @@ class YouTubeAPI:
         return None
 
     async def _fetch_video_info(self, query: str) -> Optional[Dict]:
-        prepared = self._prepare_link(query)
+        try:
+            prepared = self._prepare_link(query)
+        except ValueError:
+            prepared = (query or "").strip()
         try:
             data = await VideosSearch(prepared, limit=1).next()
             result = data.get("result", [])
@@ -184,6 +206,10 @@ class YouTubeAPI:
         if videoid:
             link = self.playlist_url + str(videoid)
         link = link.split("&")[0]
+        if limit <= 0:
+            limit = 1
+        if limit > 100:
+            limit = 100
         stdout, _ = await _exec_proc(
             "yt-dlp",
             *(_cookies_args()),
