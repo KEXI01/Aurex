@@ -29,11 +29,19 @@ from config import BANNED_USERS, lyrical
 sticker_id = "CAACAgUAAxkBAAIDG2i5G1-GgbejZ8QddOAp45geLzQfAALBFQACQ2zIVSOYW5wCt64ONgQ"
 
 
+def format_err(e):
+    ex_type = type(e).__name__
+    return str(e) if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
+
+def need_path(obj):
+    return isinstance(obj, dict) and not obj.get("path")
+
+
 @app.on_message(
     filters.command(
         [
             "play",
-            "vplay", 
+            "vplay",
             "cplay",
             "cvplay",
             "playforce",
@@ -41,7 +49,7 @@ sticker_id = "CAACAgUAAxkBAAIDG2i5G1-GgbejZ8QddOAp45geLzQfAALBFQACQ2zIVSOYW5wCt6
             "cplayforce",
             "cvplayforce",
         ],
-        prefixes=[".", "!", "/"]
+        prefixes=[".", "!", "/"],
     )
     & filters.group
     & ~BANNED_USERS
@@ -61,7 +69,6 @@ async def play_commnd(
     mystic = await message.reply_text(
         _["play_1"].format(channel) if channel else _["play_1"]
     )
-
     plist_id = None
     slider = None
     plist_type = None
@@ -78,7 +85,7 @@ async def play_commnd(
         if message.reply_to_message
         else None
     )
-    
+
     async def safe_edit_or_send(msg_obj, text):
         try:
             return await msg_obj.edit_text(text)
@@ -95,10 +102,10 @@ async def play_commnd(
         if audio_telegram.file_size > 104857600:
             return await safe_edit_or_send(mystic, _["play_5"])
         duration_min = seconds_to_min(audio_telegram.duration)
-        if (audio_telegram.duration) > config.DURATION_LIMIT:
+        if audio_telegram.duration > config.DURATION_LIMIT:
             return await safe_edit_or_send(
-                mystic, 
-                _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
+                mystic,
+                _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention),
             )
         file_path = await Telegram.get_filepath(audio=audio_telegram)
         if await Telegram.download(_, message, mystic, file_path):
@@ -111,7 +118,8 @@ async def play_commnd(
                 "path": file_path,
                 "dur": dur,
             }
-
+            if need_path(details):
+                return await safe_edit_or_send(mystic, "Failed to prepare media file.")
             try:
                 await stream(
                     _,
@@ -126,29 +134,24 @@ async def play_commnd(
                 )
             except Exception as e:
                 traceback.print_exc()
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-                return await safe_edit_or_send(mystic, err)
-            
+                return await safe_edit_or_send(mystic, format_err(e))
             try:
                 return await mystic.delete()
             except:
                 pass
         return
-        
+
     elif video_telegram:
         if message.reply_to_message.document:
             try:
                 ext = video_telegram.file_name.split(".")[-1]
                 if ext.lower() not in formats:
                     return await safe_edit_or_send(
-                        mystic,
-                        _["play_7"].format(f"{' | '.join(formats)}")
+                        mystic, _["play_7"].format(f"{' | '.join(formats)}")
                     )
             except:
                 return await safe_edit_or_send(
-                    mystic,
-                    _["play_7"].format(f"{' | '.join(formats)}")
+                    mystic, _["play_7"].format(f"{' | '.join(formats)}")
                 )
         if video_telegram.file_size > config.TG_VIDEO_FILESIZE_LIMIT:
             return await safe_edit_or_send(mystic, _["play_8"])
@@ -163,6 +166,8 @@ async def play_commnd(
                 "path": file_path,
                 "dur": dur,
             }
+            if need_path(details):
+                return await safe_edit_or_send(mystic, "Failed to prepare media file.")
             try:
                 await stream(
                     _,
@@ -178,16 +183,13 @@ async def play_commnd(
                 )
             except Exception as e:
                 traceback.print_exc()
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-                return await safe_edit_or_send(mystic, err)
-            
+                return await safe_edit_or_send(mystic, format_err(e))
             try:
                 return await mystic.delete()
             except:
                 pass
         return
-        
+
     elif url:
         if await YouTube.exists(url):
             if "playlist" in url:
@@ -215,16 +217,13 @@ async def play_commnd(
                 streamtype = "youtube"
                 img = details.get("thumb", "")
                 duration_min = details.get("duration_min", "Unknown")
-                cap = _["play_10"].format(
-                    details.get("title", "Unknown"),
-                    duration_min,
-                )
+                cap = _["play_10"].format(details.get("title", "Unknown"), duration_min)
         elif await Spotify.valid(url):
             spotify = True
             if not config.SPOTIFY_CLIENT_ID and not config.SPOTIFY_CLIENT_SECRET:
                 return await safe_edit_or_send(
                     mystic,
-                    "» sᴘᴏᴛɪғʏ ɪs ɴᴏᴛ sᴜᴘᴘᴏʀᴛᴇᴅ ʏᴇᴛ.\n\nᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ."
+                    "» sᴘᴏᴛɪғʏ ɪs ɴᴏᴛ sᴜᴘᴘᴏʀᴛᴇᴅ ʏᴇᴛ.\n\nᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.",
                 )
             if "track" in url:
                 try:
@@ -307,8 +306,10 @@ async def play_commnd(
                     _["play_6"].format(
                         config.DURATION_LIMIT_MIN,
                         app.mention,
-                    )
+                    ),
                 )
+            if need_path(details):
+                return await safe_edit_or_send(mystic, "Failed to prepare media file.")
             try:
                 await stream(
                     _,
@@ -323,10 +324,7 @@ async def play_commnd(
                 )
             except Exception as e:
                 traceback.print_exc()
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-                return await safe_edit_or_send(mystic, err)
-            
+                return await safe_edit_or_send(mystic, format_err(e))
             try:
                 return await mystic.delete()
             except:
@@ -342,11 +340,7 @@ async def play_commnd(
                 )
             except Exception as e:
                 traceback.print_exc()
-                ex_type = type(e).__name__
-                return await safe_edit_or_send(
-                    mystic,
-                    f"<code>{ex_type}: {e}</code>"
-                )
+                return await safe_edit_or_send(mystic, format_err(e))
             await safe_edit_or_send(mystic, _["str_2"])
             try:
                 await stream(
@@ -363,17 +357,12 @@ async def play_commnd(
                 )
             except Exception as e:
                 traceback.print_exc()
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-                return await safe_edit_or_send(mystic, err)
+                return await safe_edit_or_send(mystic, format_err(e))
             return await play_logs(message, streamtype="M3u8 or Index Link")
     else:
         if len(message.command) < 2:
             buttons = botplaylist_markup(_)
-            return await safe_edit_or_send(
-                mystic,
-                _["play_18"],
-            )
+            return await safe_edit_or_send(mystic, _["play_18"])
         slider = True
         query = message.text.split(None, 1)[1]
         if "-v" in query:
@@ -383,7 +372,7 @@ async def play_commnd(
         except:
             return await safe_edit_or_send(mystic, _["play_3"])
         streamtype = "youtube"
-        
+
     if str(playmode) == "Direct":
         if not plist_type:
             if details and details.get("duration_min"):
@@ -391,7 +380,10 @@ async def play_commnd(
                 if duration_sec > config.DURATION_LIMIT:
                     return await safe_edit_or_send(
                         mystic,
-                        _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
+                        _["play_6"].format(
+                            config.DURATION_LIMIT_MIN,
+                            app.mention,
+                        ),
                     )
             else:
                 buttons = livestream_markup(
@@ -413,6 +405,8 @@ async def play_commnd(
                         reply_markup=InlineKeyboardMarkup(buttons),
                     )
                 return
+        if streamtype != "index" and need_path(details):
+            return await safe_edit_or_send(mystic, "Failed to prepare media file.")
         try:
             await stream(
                 _,
@@ -429,10 +423,7 @@ async def play_commnd(
             )
         except Exception as e:
             traceback.print_exc()
-            ex_type = type(e).__name__
-            err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-            return await safe_edit_or_send(mystic, err)
-        
+            return await safe_edit_or_send(mystic, format_err(e))
         try:
             await mystic.delete()
         except:
@@ -485,7 +476,7 @@ async def play_commnd(
                     ),
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
-                return await play_logs(message, streamtype=f"Searched on Youtube")
+                return await play_logs(message, streamtype="Searched on Youtube")
             else:
                 buttons = track_markup(
                     _,
@@ -503,7 +494,9 @@ async def play_commnd(
                     caption=cap,
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
-                return await play_logs(message, streamtype=f"URL Searched Inline")
+                return await play_logs(message, streamtype="URL Searched Inline")
+
+
 
 @app.on_callback_query(filters.regex("MusicStream") & ~BANNED_USERS)
 @languageCB
@@ -554,6 +547,8 @@ async def play_music(client, CallbackQuery, _):
         )
     video = True if mode == "v" else None
     ffplay = True if fplay == "f" else None
+    if need_path(details):
+        return await mystic.edit_text("Failed to prepare media file.")
     try:
         await stream(
             _,
@@ -569,11 +564,8 @@ async def play_music(client, CallbackQuery, _):
         )
     except Exception as e:
         traceback.print_exc()
-        ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-        return await mystic.edit_text(err)
+        return await mystic.edit_text(format_err(e))
     return await mystic.delete()
-
 
 @app.on_callback_query(filters.regex("SignalmousAdmin") & ~BANNED_USERS)
 async def Signalmous_check(client, CallbackQuery):
@@ -584,7 +576,6 @@ async def Signalmous_check(client, CallbackQuery):
         )
     except:
         pass
-
 
 @app.on_callback_query(filters.regex("SignalPlaylists") & ~BANNED_USERS)
 @languageCB
@@ -652,6 +643,8 @@ async def play_playlists_command(client, CallbackQuery, _):
             result, apple_id = await Apple.playlist(videoid, True)
         except:
             return await mystic.edit_text(_["play_3"])
+    if need_path(result):
+        return await mystic.edit_text("Failed to prepare media file.")
     try:
         await stream(
             _,
@@ -668,9 +661,7 @@ async def play_playlists_command(client, CallbackQuery, _):
         )
     except Exception as e:
         traceback.print_exc()
-        ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
-        return await mystic.edit_text(err)
+        return await mystic.edit_text(format_err(e))
     return await mystic.delete()
 
 
