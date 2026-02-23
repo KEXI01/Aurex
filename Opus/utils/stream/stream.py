@@ -149,12 +149,15 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
 
-        try:
-            file_path, direct = await YouTube.download(
-                vidid, mystic, videoid=True, video=is_video
-            )
-        except:
-            raise AssistantErr(_["play_14"])
+        file_path = result.get("path")
+        direct = True
+        if not file_path:
+            try:
+                file_path, direct = await YouTube.download(
+                    vidid, mystic, videoid=True, video=is_video
+                )
+            except:
+                raise AssistantErr(_["play_14"])
         if not file_path:
             raise AssistantErr(_["play_14"])
 
