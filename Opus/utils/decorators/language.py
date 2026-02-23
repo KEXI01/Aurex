@@ -1,5 +1,5 @@
 from strings import get_string
-
+import config
 from Opus import app
 from Opus.misc import SUDOERS
 from Opus.utils.database import get_lang, is_maintenance
