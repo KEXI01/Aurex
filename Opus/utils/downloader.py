@@ -1,24 +1,20 @@
 import asyncio
-import contextlib
 import os
 import re
-import time
-from typing import Dict, Optional, Union
+from typing import Optional, Dict, Union, List
 
 import aiofiles
 import httpx
 from yt_dlp import YoutubeDL
 from config import API_URL
 
-DOWNLOAD_DIR = "downloads"
-CACHE_DIR = "cache"
-COOKIE_PATH = "Opus/assets/cookies.txt"
-CHUNK_SIZE = 4 * 1024 * 1024
-USE_API = True
-CHUNK_DOWNLOADS = True
+cookies_file = "Opus/assets/cookies.txt"
+download_folder = "downloads"
+os.makedirs(download_folder, exist_ok=True)
 
-_client: Optional[httpx.AsyncClient] = None
-_client_lock = asyncio.Lock()
+API_DOWNLOAD_MAX_RETRIES = 1
+CHUNK_SIZE = 4 * 1024 * 1024
+API_TIMEOUT_SECONDS = 120
 
 
 def extract_video_id(link: str) -> str:
@@ -36,359 +32,345 @@ def extract_video_id(link: str) -> str:
     return link.split("/")[-1].split("?")[0]
 
 
-def _looks_like_video_id(value: str) -> bool:
-    return bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", value))
+def safe_filename(name: str) -> str:
+    return re.sub(r"[\\/*?\"<>|]", "_", (name or "").strip())[:150]
 
 
-def _audio_exists(video_id: str) -> Optional[str]:
-    for e in ("m4a", "opus", "mp3", "webm"):
-        path = f"{DOWNLOAD_DIR}/{video_id}.{e}"
-        if os.path.exists(path):
+def file_exists(video_id: str, file_type: str = "audio") -> Optional[str]:
+    if file_type == "audio":
+        exts = ["mp3", "m4a", "opus", "webm", "mp4", "mkv"]
+    else:
+        exts = ["mp4", "mkv", "webm"]
+    for ext in exts:
+        path = f"{download_folder}/{video_id}.{ext}"
+        if os.path.exists(path) and os.path.getsize(path) > 0:
             return path
+    for file in os.listdir(download_folder):
+        for ext in exts:
+            if file.endswith(f".{ext}") and file.startswith(video_id):
+                full = f"{download_folder}/{file}"
+                if os.path.getsize(full) > 0:
+                    return full
     return None
 
 
-def _cookiefile_path() -> Optional[str]:
-    try:
-        if COOKIE_PATH and os.path.exists(COOKIE_PATH) and os.path.getsize(COOKIE_PATH) > 0:
-            return COOKIE_PATH
-    except Exception:
-        pass
-    return None
+def _ext_from_filename(fn: str, default: str) -> str:
+    fn = (fn or "").strip()
+    if "." in fn:
+        ext = fn.rsplit(".", 1)[-1].strip().lower()
+        if re.fullmatch(r"[0-9a-z]{1,6}", ext):
+            return ext
+    return default
 
 
-def file_exists(video_id: str, ext: str = None) -> Optional[str]:
-    exts = [ext] if ext else ("mp3", "m4a", "webm", "mp4")
-    for e in exts:
-        path = f"{DOWNLOAD_DIR}/{video_id}.{e}"
-        if os.path.exists(path):
-            return path
-    return None
+async def api_download(link: str, file_type: str = "audio", audio_format: str = "m4a") -> Optional[str]:
+    if "youtube.com" not in link and "youtu.be" not in link:
+        video_id = extract_video_id(link)
+        link = f"https://www.youtube.com/watch?v={video_id}"
+    else:
+        video_id = extract_video_id(link)
 
-
-def _safe_filename(name: str) -> str:
-    return re.sub(r'[\\/*?:"<>|]+', "_", (name or "").strip())[:200]
-
-
-def _ytdlp_base_opts() -> Dict[str, Union[str, int, bool]]:
-    opts = {
-        "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "overwrites": True,
-        "continuedl": True,
-        "noprogress": True,
-        "concurrent_fragment_downloads": 42,
-        "http_chunk_size": 1 << 20,
-        "socket_timeout": 30,
-        "retries": 1,
-        "fragment_retries": 1,
-        "cachedir": str(CACHE_DIR),
+    base_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/129.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
     }
-    if cookiefile := _cookiefile_path():
-        opts["cookiefile"] = cookiefile
-    return opts
+    file_headers = {
+        "User-Agent": base_headers["User-Agent"],
+        "Accept": "*/*",
+    }
+    timeout = httpx.Timeout(API_TIMEOUT_SECONDS)
 
-
-async def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client and not _client.is_closed:
-        return _client
-    async with _client_lock:
-        if _client and not _client.is_closed:
-            return _client
-        _client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=20.0, read=60.0),
-            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100, keepalive_expiry=300),
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-    return _client
+            headers=base_headers,
+        ) as client:
+            if file_type == "audio":
+                fmt = (audio_format or "m4a").lower()
+                api_url = f"{API_URL}?url={link}&format={fmt}"
+                resp = await client.get(api_url)
+                if resp.status_code != 200:
+                    return None
+                ct = resp.headers.get("content-type", "")
+                if "application/json" not in ct:
+                    return None
+                data = resp.json() if resp.content else {}
+                if data.get("status") != "tunnel":
+                    return None
+                download_url = data.get("url")
+                if not download_url:
+                    return None
+                filename = data.get("filename") or ""
+                ext = _ext_from_filename(filename, fmt)
+                path = f"{download_folder}/{video_id}.{ext}"
 
+                for _ in range(API_DOWNLOAD_MAX_RETRIES):
+                    if os.path.exists(path):
+                        os.remove(path)
+                    try:
+                        async with client.stream("GET", download_url, headers=file_headers) as r:
+                            if r.status_code != 200:
+                                continue
+                            async with aiofiles.open(path, "wb") as f:
+                                async for chunk in r.aiter_bytes(CHUNK_SIZE):
+                                    if not chunk:
+                                        break
+                                    await f.write(chunk)
+                    except Exception:
+                        continue
 
-async def _api_fetch_json(path: str, params: dict | None = None, timeout: float = 80.0) -> Optional[dict]:
-    if not USE_API or not API_URL:
-        return None
-    try:
-        client = await _get_client()
-        backoff = 0.2
-        for _ in range(1):
-            r = await client.get(f"{API_URL.rstrip('/')}{path}", params=params, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-            if r.status_code >= 500:
-                await asyncio.sleep(backoff)
-                backoff *= 2
-                continue
-            return None
-    except Exception:
-        return None
-    return None
+                    if not os.path.exists(path):
+                        continue
+                    if os.path.getsize(path) < 1024 * 100:
+                        os.remove(path)
+                        continue
+                    return path
 
+                return None
 
-async def _stream_download(url: str, out_path: str, timeout: float) -> bool:
-    try:
-        client = await _get_client()
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        async with client.stream("GET", url, timeout=timeout) as resp:
+            api_url = f"{API_URL}?url={link}&format=mp4"
+            resp = await client.get(api_url)
             if resp.status_code != 200:
-                return False
-            async with aiofiles.open(out_path, "wb") as f:
-                async for chunk in resp.aiter_bytes(CHUNK_SIZE):
-                    if chunk:
-                        await f.write(chunk)
-        return os.path.exists(out_path) and os.path.getsize(out_path) > 0
-    except Exception:
-        return False
+                return None
+            ct = resp.headers.get("content-type", "")
+            if "application/json" not in ct:
+                return None
+            data = resp.json() if resp.content else {}
+            if data.get("status") != "tunnel":
+                return None
+            download_url = data.get("url")
+            if not download_url:
+                return None
+            filename = data.get("filename") or ""
+            ext = _ext_from_filename(filename, "mp4")
+            path = f"{download_folder}/{video_id}.{ext}"
 
+            for _ in range(API_DOWNLOAD_MAX_RETRIES):
+                if os.path.exists(path):
+                    os.remove(path)
+                try:
+                    async with client.stream("GET", download_url, headers=file_headers) as r:
+                        if r.status_code != 200:
+                            continue
+                        async with aiofiles.open(path, "wb") as f:
+                            async for chunk in r.aiter_bytes(CHUNK_SIZE):
+                                if not chunk:
+                                    break
+                                await f.write(chunk)
+                except Exception:
+                    continue
 
-async def _direct_download(url: str, out_path: str, timeout: float) -> bool:
-    try:
-        client = await _get_client()
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        r = await client.get(url, timeout=timeout)
-        if r.status_code != 200:
-            return False
-        async with aiofiles.open(out_path, "wb") as f:
-            await f.write(r.content)
-        return os.path.exists(out_path) and os.path.getsize(out_path) > 0
-    except Exception:
-        return False
+                if not os.path.exists(path):
+                    continue
+                if os.path.getsize(path) < 1024 * 100:
+                    os.remove(path)
+                    continue
+                return path
 
-
-async def api_download_audio(video_id: str) -> Optional[str]:
-    if not USE_API or not API_URL:
-        return None
-    try:
-        client = await _get_client()
-        base = API_URL.rstrip("/")
-        yurl = f"https://youtu.be/{video_id}"
-        r = await client.get(base, params={"url": yurl, "format": "mp3"}, timeout=20.0)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if data.get("status") != 200 or data.get("successful") != "success":
-            return None
-
-        payload = data.get("data") or {}
-        download_info = payload.get("download") or {}
-        dl_url = download_info.get("url")
-        filename = download_info.get("filename") or f"{video_id}.m4a"
-
-        if not dl_url:
             return None
 
-        ext = "m4a"
-        out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
-        if CHUNK_DOWNLOADS:
-            ok = await _stream_download(dl_url, out_path, timeout=60.0)
-        else:
-            ok = await _direct_download(dl_url, out_path, timeout=60.0)
-        if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            return out_path
     except Exception:
         return None
-    return None
 
 
-async def api_download_video(video_id: str, wait_timeout: float = 60.0) -> Optional[str]:
-    if not USE_API or not API_URL:
-        return None
+def _download_ytdlp(link: str, opts: Dict) -> Union[None, str, List[str]]:
     try:
-        client = await _get_client()
-        base = API_URL.rstrip("/")
-        yurl = f"https://youtu.be/{video_id}"
-        r = await client.get(
-            base,
-            params={"url": yurl, "format": "mp4"},
-            timeout=wait_timeout
-        )
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if data.get("status") != 200 or data.get("successful") != "success":
-            return None
-
-        payload = data.get("data") or {}
-        download_info = payload.get("download") or {}
-        dl_url = download_info.get("url")
-        filename = download_info.get("filename") or f"{video_id}.mp4"
-
-        if not dl_url:
-            return None
-
-        _, ext = os.path.splitext(filename)
-        ext = (ext or ".mp4").lstrip(".") or "mp4"
-        out_path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
-        dl_timeout = max(wait_timeout, 60.0)
-        if CHUNK_DOWNLOADS:
-            ok = await _stream_download(dl_url, out_path, timeout=dl_timeout)
-        else:
-            ok = await _direct_download(dl_url, out_path, timeout=dl_timeout)
-        if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            return out_path
-    except Exception:
-        return None
-    return None
-
-
-def _download_ytdlp_sync(link: str, opts: dict) -> Optional[str]:
-    try:
-        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        preexisting = set()
-        for root, _, files in os.walk(DOWNLOAD_DIR):
-            for f in files:
-                preexisting.add(os.path.join(root, f))
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(link, download=False)
+            if "entries" in info:
+                results: List[str] = []
+                ydl.download([link])
+                for entry in info["entries"]:
+                    vid = entry.get("id")
+                    if not vid:
+                        continue
+                    for file in os.listdir(download_folder):
+                        if file.startswith(vid):
+                            full = f"{download_folder}/{file}"
+                            if os.path.getsize(full) > 0:
+                                results.append(full)
+                return results
             vid = info.get("id")
-            ext = info.get("ext", "webm")
-            expected_by_id = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
-            if os.path.exists(expected_by_id) and os.path.getsize(expected_by_id) > 0:
-                return expected_by_id
+            ext = "mp3" if "postprocessors" in opts else "mp4"
+            expected = f"{download_folder}/{vid}.{ext}"
             ydl.download([link])
-        post = []
-        for root, _, files in os.walk(DOWNLOAD_DIR):
-            for f in files:
-                path = os.path.join(root, f)
-                if path not in preexisting and os.path.getsize(path) > 0:
-                    post.append(path)
-        if len(post) == 1:
-            return post[0]
-        for p in post:
-            if vid and vid in os.path.basename(p):
-                return p
-        if os.path.exists(expected_by_id) and os.path.getsize(expected_by_id) > 0:
-            return expected_by_id
-        return post[0] if post else None
+            if os.path.exists(expected) and os.path.getsize(expected) > 0:
+                return expected
+            for file in os.listdir(download_folder):
+                if file.startswith(vid):
+                    full = f"{download_folder}/{file}"
+                    if os.path.getsize(full) > 0:
+                        return full
+            return None
     except Exception:
         return None
 
 
-async def _run_ytdlp(link: str, opts: dict) -> Optional[str]:
+async def yt_dlp_download(link: str, type: str, format_id: str = None, outtmpl: Optional[str] = None) -> Union[None, str, List[str]]:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _download_ytdlp_sync, link, opts)
+
+    def is_restricted() -> bool:
+        return os.path.exists(cookies_file)
+
+    common_opts: Dict = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": False,
+        "geo_bypass": True,
+        "concurrent_fragment_downloads": 32,
+        "outtmpl": outtmpl or f"{download_folder}/%(id)s.%(ext)s",
+    }
+
+    if type in ["audio", "song_audio"]:
+        opts = {
+            **common_opts,
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
+        }
+        if is_restricted():
+            opts["cookiefile"] = cookies_file
+    else:
+        fmt = format_id or "best[height<=720]/bestvideo[height<=720]+bestaudio/best[height<=720]"
+        opts = {
+            **common_opts,
+            "format": fmt,
+            "merge_output_format": "mp4",
+            "prefer_ffmpeg": True,
+        }
+        if is_restricted():
+            opts["cookiefile"] = cookies_file
+
+    return await loop.run_in_executor(None, _download_ytdlp, link, opts)
 
 
 async def download_audio(link: str) -> Optional[str]:
-    raw = link.strip()
-    if _looks_like_video_id(raw):
-        video_id = raw
-    else:
-        video_id = extract_video_id(raw)
-    if cached := _audio_exists(video_id):
-        return cached
-
-    async def run():
-        api_result = await api_download_audio(video_id)
-        if api_result and os.path.exists(api_result):
+    vid = extract_video_id(link)
+    existing = file_exists(vid, "audio")
+    if existing:
+        return existing
+    try:
+        api_result = await asyncio.wait_for(
+            api_download(link, file_type="audio", audio_format="m4a"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if api_result and os.path.exists(api_result) and os.path.getsize(api_result) > 0:
             return api_result
-        opts = _ytdlp_base_opts()
-        opts.update({
-            "format": "bestaudio/best",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }],
-            "outtmpl": f"{DOWNLOAD_DIR}/{video_id}.%(ext)s",
-        })
-        return await _run_ytdlp(link, opts)
-
-    return await run()
+    except Exception:
+        pass
+    try:
+        yt_result = await asyncio.wait_for(
+            yt_dlp_download(link, type="audio"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if isinstance(yt_result, list):
+            return yt_result[0] if yt_result else None
+        return yt_result
+    except Exception:
+        return None
 
 
 async def download_video(link: str, quality: int = 360) -> Optional[str]:
-    video_id = extract_video_id(link)
-    if cached := file_exists(video_id, "mp4"):
-        return cached
-
-    async def run():
-        api_result = await api_download_video(video_id, wait_timeout=60.0)
-        if api_result and os.path.exists(api_result):
+    vid = extract_video_id(link)
+    existing = file_exists(vid, "video")
+    if existing:
+        return existing
+    try:
+        api_result = await asyncio.wait_for(
+            api_download(link, file_type="video"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if api_result and os.path.exists(api_result) and os.path.getsize(api_result) > 0:
             return api_result
-        height = min(quality, 1080)
-        opts = _ytdlp_base_opts()
-        opts.update({
-            "format": f"best[height<={height}]/best",
-            "merge_output_format": "mp4",
-        })
-        return await _run_ytdlp(link, opts)
-
-    return await run()
-
-
-async def download_song_video(link: str, format_id: Optional[str], title: str) -> Optional[str]:
-    safe_title = _safe_filename(title)
-    video_id = extract_video_id(link)
-    out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp4"
-    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-        return out_path
-
-    async def run():
-        api_vid = await api_download_video(video_id, wait_timeout=160.0)
-        if api_vid and os.path.exists(api_vid):
-            os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-            final_path = out_path
-            with contextlib.suppress(FileNotFoundError):
-                os.replace(api_vid, final_path)
-            return final_path if os.path.exists(final_path) else None
-        opts = _ytdlp_base_opts()
-        if format_id:
-            opts.update({
-                "format": f"{format_id}+140",
-                "outtmpl": out_path,
-                "merge_output_format": "mp4",
-            })
-        else:
-            opts.update({
-                "format": "bestvideo+bestaudio/best",
-                "outtmpl": out_path,
-                "merge_output_format": "mp4",
-            })
-        await _run_ytdlp(link, opts)
-        return out_path if os.path.exists(out_path) and os.path.getsize(out_path) > 0 else None
-
-    return await run()
+    except Exception:
+        pass
+    try:
+        yt_result = await asyncio.wait_for(
+            yt_dlp_download(link, type="video"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if isinstance(yt_result, list):
+            return yt_result[0] if yt_result else None
+        return yt_result
+    except Exception:
+        return None
 
 
 async def download_song_audio(link: str, format_id: Optional[str], title: str) -> Optional[str]:
-    safe_title = _safe_filename(title)
-    raw = link.strip()
-    if _looks_like_video_id(raw):
-        video_id = raw
-    else:
-        video_id = extract_video_id(raw)
-    out_path = f"{DOWNLOAD_DIR}/{safe_title}.mp3"
-    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-        return out_path
+    safe_title = safe_filename(title or "audio")
+    out_path_base = f"{download_folder}/{safe_title}.mp3"
+    if os.path.exists(out_path_base) and os.path.getsize(out_path_base) > 0:
+        return out_path_base
 
-    async def run():
-        api_audio = await api_download_audio(video_id)
-        if api_audio and os.path.exists(api_audio):
-            os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-            ext = os.path.splitext(api_audio)[1] or ".mp3"
-            final_path = f"{DOWNLOAD_DIR}/{safe_title}{ext}"
-            with contextlib.suppress(FileNotFoundError):
-                os.replace(api_audio, final_path)
-            return final_path if os.path.exists(final_path) else None
-        opts = _ytdlp_base_opts()
-        if format_id:
-            fmt = format_id
-        else:
-            fmt = "bestaudio/best"
-        opts.update({
-            "format": fmt,
-            "outtmpl": f"{DOWNLOAD_DIR}/{safe_title}.%(ext)s",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }],
-        })
-        await _run_ytdlp(link, opts)
-        return out_path if os.path.exists(out_path) and os.path.getsize(out_path) > 0 else None
+    try:
+        api_result = await asyncio.wait_for(
+            api_download(link, file_type="audio", audio_format="m4a"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if api_result and os.path.exists(api_result) and os.path.getsize(api_result) > 0:
+            ext = os.path.splitext(api_result)[1] or ".mp3"
+            final_path = f"{download_folder}/{safe_title}{ext}"
+            if api_result != final_path:
+                try:
+                    os.replace(api_result, final_path)
+                except Exception:
+                    final_path = api_result
+            return final_path
+    except Exception:
+        pass
 
-    return await run()
+    try:
+        outtmpl = f"{download_folder}/{safe_title}.%(ext)s"
+        yt_result = await asyncio.wait_for(
+            yt_dlp_download(link, type="song_audio", format_id=format_id or None, outtmpl=outtmpl),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if isinstance(yt_result, list):
+            return yt_result[0] if yt_result else None
+        return yt_result
+    except Exception:
+        return None
+
+
+async def download_song_video(link: str, format_id: Optional[str], title: str) -> Optional[str]:
+    safe_title = safe_filename(title or "video")
+    out_path_base = f"{download_folder}/{safe_title}.mp4"
+    if os.path.exists(out_path_base) and os.path.getsize(out_path_base) > 0:
+        return out_path_base
+
+    try:
+        api_result = await asyncio.wait_for(
+            api_download(link, file_type="video"),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if api_result and os.path.exists(api_result) and os.path.getsize(api_result) > 0:
+            ext = os.path.splitext(api_result)[1] or ".mp4"
+            final_path = f"{download_folder}/{safe_title}{ext}"
+            if api_result != final_path:
+                try:
+                    os.replace(api_result, final_path)
+                except Exception:
+                    final_path = api_result
+            return final_path
+    except Exception:
+        pass
+
+    try:
+        outtmpl = f"{download_folder}/{safe_title}.%(ext)s"
+        yt_result = await asyncio.wait_for(
+            yt_dlp_download(link, type="video", format_id=format_id or None, outtmpl=outtmpl),
+            timeout=API_TIMEOUT_SECONDS,
+        )
+        if isinstance(yt_result, list):
+            return yt_result[0] if yt_result else None
+        return yt_result
+    except Exception:
+        return None
