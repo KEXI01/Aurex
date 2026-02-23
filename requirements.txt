@@ -14,7 +14,7 @@ py-tgcalls==1.2.9
 ntgcalls==1.1.2
 numpy
 gunicorn
-pyrotgfork==2.2.16
+kurigram==2.2.14
 python-dotenv
 pyyaml
 requests
