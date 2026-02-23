@@ -31,7 +31,6 @@ async def stream(
     if not result:
         return
 
-    # Normalize to strict bool for downstream MediaStream builder
     is_video = bool(video)
 
     if forceplay:
@@ -78,6 +77,8 @@ async def stream(
                         vidid, mystic, videoid=True, video=is_video
                     )
                 except:
+                    raise AssistantErr(_["play_14"])
+                if not file_path:
                     raise AssistantErr(_["play_14"])
                 await Signal.join_call(
                     chat_id,
@@ -153,6 +154,8 @@ async def stream(
                 vidid, mystic, videoid=True, video=is_video
             )
         except:
+            raise AssistantErr(_["play_14"])
+        if not file_path:
             raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
@@ -375,7 +378,7 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             n, file_path = await YouTube.video(link)
-            if n == 0:
+            if n == 0 or not file_path:
                 raise AssistantErr(_["str_3"])
             await Signal.join_call(
                 chat_id,
