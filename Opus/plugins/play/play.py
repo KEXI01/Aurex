@@ -1,5 +1,6 @@
 import random
 import string
+import traceback
 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
@@ -27,6 +28,7 @@ from config import BANNED_USERS, lyrical
 
 sticker_id = "CAACAgUAAxkBAAIDG2i5G1-GgbejZ8QddOAp45geLzQfAALBFQACQ2zIVSOYW5wCt64ONgQ"
 
+
 @app.on_message(
     filters.command(
         [
@@ -39,7 +41,7 @@ sticker_id = "CAACAgUAAxkBAAIDG2i5G1-GgbejZ8QddOAp45geLzQfAALBFQACQ2zIVSOYW5wCt6
             "cplayforce",
             "cvplayforce",
         ],
-        prefixes=[".", "!", "/"]  # Support all three prefixes
+        prefixes=[".", "!", "/"]
     )
     & filters.group
     & ~BANNED_USERS
@@ -77,19 +79,15 @@ async def play_commnd(
         else None
     )
     
-    # Helper function to safely edit or send new message
     async def safe_edit_or_send(msg_obj, text):
         try:
             return await msg_obj.edit_text(text)
         except MessageIdInvalid:
-            # If message ID is invalid, send a new message
             return await message.reply_text(text)
         except Exception as e:
-            # For any other error, try to send a new message
             try:
                 return await message.reply_text(text)
             except:
-                # If all else fails, log the error
                 print(f"Failed to send message: {e}")
                 return None
 
@@ -98,7 +96,8 @@ async def play_commnd(
             return await safe_edit_or_send(mystic, _["play_5"])
         duration_min = seconds_to_min(audio_telegram.duration)
         if (audio_telegram.duration) > config.DURATION_LIMIT:
-            return await safe_edit_or_send(mystic, 
+            return await safe_edit_or_send(
+                mystic, 
                 _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
             )
         file_path = await Telegram.get_filepath(audio=audio_telegram)
@@ -126,14 +125,15 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
+                traceback.print_exc()
                 ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
                 return await safe_edit_or_send(mystic, err)
             
             try:
                 return await mystic.delete()
             except:
-                pass  # Ignore if message can't be deleted
+                pass
         return
         
     elif video_telegram:
@@ -141,11 +141,13 @@ async def play_commnd(
             try:
                 ext = video_telegram.file_name.split(".")[-1]
                 if ext.lower() not in formats:
-                    return await safe_edit_or_send(mystic,
+                    return await safe_edit_or_send(
+                        mystic,
                         _["play_7"].format(f"{' | '.join(formats)}")
                     )
             except:
-                return await safe_edit_or_send(mystic,
+                return await safe_edit_or_send(
+                    mystic,
                     _["play_7"].format(f"{' | '.join(formats)}")
                 )
         if video_telegram.file_size > config.TG_VIDEO_FILESIZE_LIMIT:
@@ -175,14 +177,15 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
+                traceback.print_exc()
                 ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
                 return await safe_edit_or_send(mystic, err)
             
             try:
                 return await mystic.delete()
             except:
-                pass  # Ignore if message can't be deleted
+                pass
         return
         
     elif url:
@@ -211,7 +214,6 @@ async def play_commnd(
                     return await safe_edit_or_send(mystic, _["play_3"])
                 streamtype = "youtube"
                 img = details.get("thumb", "")
-                # Fix for missing duration_min key
                 duration_min = details.get("duration_min", "Unknown")
                 cap = _["play_10"].format(
                     details.get("title", "Unknown"),
@@ -220,7 +222,8 @@ async def play_commnd(
         elif await Spotify.valid(url):
             spotify = True
             if not config.SPOTIFY_CLIENT_ID and not config.SPOTIFY_CLIENT_SECRET:
-                return await safe_edit_or_send(mystic,
+                return await safe_edit_or_send(
+                    mystic,
                     "» sᴘᴏᴛɪғʏ ɪs ɴᴏᴛ sᴜᴘᴘᴏʀᴛᴇᴅ ʏᴇᴛ.\n\nᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ."
                 )
             if "track" in url:
@@ -299,7 +302,8 @@ async def play_commnd(
                 return await safe_edit_or_send(mystic, _["play_3"])
             duration_sec = details.get("duration_sec", 0)
             if duration_sec > config.DURATION_LIMIT:
-                return await safe_edit_or_send(mystic,
+                return await safe_edit_or_send(
+                    mystic,
                     _["play_6"].format(
                         config.DURATION_LIMIT_MIN,
                         app.mention,
@@ -318,14 +322,15 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
+                traceback.print_exc()
                 ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
                 return await safe_edit_or_send(mystic, err)
             
             try:
                 return await mystic.delete()
             except:
-                pass  # Ignore if message can't be deleted
+                pass
         else:
             try:
                 await Signal.stream_call(url)
@@ -336,7 +341,12 @@ async def play_commnd(
                     text=_["play_17"],
                 )
             except Exception as e:
-                return await safe_edit_or_send(mystic, _["general_2"].format(type(e).__name__))
+                traceback.print_exc()
+                ex_type = type(e).__name__
+                return await safe_edit_or_send(
+                    mystic,
+                    f"<code>{ex_type}: {e}</code>"
+                )
             await safe_edit_or_send(mystic, _["str_2"])
             try:
                 await stream(
@@ -352,16 +362,17 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
+                traceback.print_exc()
                 ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+                err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
                 return await safe_edit_or_send(mystic, err)
             return await play_logs(message, streamtype="M3u8 or Index Link")
     else:
         if len(message.command) < 2:
             buttons = botplaylist_markup(_)
-            return await safe_edit_or_send(mystic,
+            return await safe_edit_or_send(
+                mystic,
                 _["play_18"],
-                # reply_markup=InlineKeyboardMarkup(buttons),  # Note: safe_edit_or_send doesn't support reply_markup
             )
         slider = True
         query = message.text.split(None, 1)[1]
@@ -375,11 +386,11 @@ async def play_commnd(
         
     if str(playmode) == "Direct":
         if not plist_type:
-            # Safe check for duration_min key
             if details and details.get("duration_min"):
                 duration_sec = time_to_seconds(details["duration_min"])
                 if duration_sec > config.DURATION_LIMIT:
-                    return await safe_edit_or_send(mystic,
+                    return await safe_edit_or_send(
+                        mystic,
                         _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
                     )
             else:
@@ -417,14 +428,15 @@ async def play_commnd(
                 forceplay=fplay,
             )
         except Exception as e:
+            traceback.print_exc()
             ex_type = type(e).__name__
-            err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+            err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
             return await safe_edit_or_send(mystic, err)
         
         try:
             await mystic.delete()
         except:
-            pass  # Ignore if message can't be deleted
+            pass
         return await play_logs(message, streamtype=streamtype)
     else:
         if plist_type:
@@ -443,7 +455,7 @@ async def play_commnd(
             try:
                 await mystic.delete()
             except:
-                pass  # Ignore if message can't be deleted
+                pass
             await message.reply_photo(
                 photo=img,
                 caption=cap,
@@ -464,7 +476,7 @@ async def play_commnd(
                 try:
                     await mystic.delete()
                 except:
-                    pass  # Ignore if message can't be deleted
+                    pass
                 await message.reply_photo(
                     photo=details.get("thumb", ""),
                     caption=_["play_10"].format(
@@ -485,7 +497,7 @@ async def play_commnd(
                 try:
                     await mystic.delete()
                 except:
-                    pass  # Ignore if message can't be deleted
+                    pass
                 await message.reply_photo(
                     photo=img,
                     caption=cap,
@@ -493,7 +505,6 @@ async def play_commnd(
                 )
                 return await play_logs(message, streamtype=f"URL Searched Inline")
 
-#callbacks 
 @app.on_callback_query(filters.regex("MusicStream") & ~BANNED_USERS)
 @languageCB
 async def play_music(client, CallbackQuery, _):
@@ -557,8 +568,9 @@ async def play_music(client, CallbackQuery, _):
             forceplay=ffplay,
         )
     except Exception as e:
+        traceback.print_exc()
         ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+        err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
         return await mystic.edit_text(err)
     return await mystic.delete()
 
@@ -655,8 +667,9 @@ async def play_playlists_command(client, CallbackQuery, _):
             forceplay=ffplay,
         )
     except Exception as e:
+        traceback.print_exc()
         ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+        err = e if ex_type == "AssistantErr" else f"<code>{ex_type}: {e}</code>"
         return await mystic.edit_text(err)
     return await mystic.delete()
 
