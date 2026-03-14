@@ -31,6 +31,9 @@ from strings import get_string
 
 links = {}
 
+CMD_DELETE = False
+CMD_DELETE_DELAY = 5
+
 
 async def safe_reply(msg, text, markup=None, **kwargs):
     try:
@@ -54,6 +57,15 @@ async def safe_reply_photo(msg, photo, caption, buttons=None):
         pass
 
 
+async def safe_delete_message(msg, delay: int = 0):
+    try:
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await msg.delete()
+    except Exception:
+        pass
+
+
 def PlayWrapper(command):
     async def wrapper(client, message):
         try:
@@ -70,16 +82,18 @@ def PlayWrapper(command):
                 return await safe_reply(
                     message,
                     text=f"{app.mention} ɪs uɴᴅᴇʀ ᴍaɪɴᴛᴇɴᴀɴᴄᴇ.\nPlease visit <a href={SUPPORT_CHAT}>support chat for latest updates & discussions</a>.",
-                    disable_web_page_preview=True
+                    disable_web_page_preview=True,
                 )
 
-            try:
-                await message.delete()
-            except:
-                pass
+            if CMD_DELETE:
+                asyncio.create_task(safe_delete_message(message, CMD_DELETE_DELAY))
 
-            audio = (message.reply_to_message.audio or message.reply_to_message.voice) if message.reply_to_message else None
-            video = (message.reply_to_message.video or message.reply_to_message.document) if message.reply_to_message else None
+            audio = (
+                message.reply_to_message.audio or message.reply_to_message.voice
+            ) if message.reply_to_message else None
+            video = (
+                message.reply_to_message.video or message.reply_to_message.document
+            ) if message.reply_to_message else None
             url = await YouTube.url(message)
 
             if not (audio or video or url):
@@ -114,7 +128,6 @@ def PlayWrapper(command):
 
             cmd = (message.command[0] if message.command else "").lstrip("/.!").lower()
             video_cmds = {"vplay", "cvplay", "vplayforce", "cvplayforce"}
-            channel_cmds = {"cplay", "cvplay", "cplayforce", "cvplayforce"}
             force_cmds = {"playforce", "vplayforce", "cplayforce", "cvplayforce"}
             is_video = True if (cmd in video_cmds or "-v" in (message.text or "").lower()) else None
             fplay = True if cmd in force_cmds else None
@@ -124,7 +137,7 @@ def PlayWrapper(command):
                 if bot_member.status != ChatMemberStatus.ADMINISTRATOR:
                     return await safe_reply(
                         message,
-                        "🛑 Please promote Storm Music with Proper admin rights to start Streaming 🎵."
+                        "🛑 Please promote Storm Music with Proper admin rights to start Streaming 🎵.",
                     )
             except ChatAdminRequired:
                 pass
@@ -153,25 +166,32 @@ def PlayWrapper(command):
                             return None
 
                 if isinstance(invite_link, str) and invite_link.startswith("https://t.me/+"):
-                    invite_link = invite_link.replace("https://t.me/+", "https://t.me/joinchat/")
+                    invite_link = invite_link.replace(
+                        "https://t.me/+", "https://t.me/joinchat/"
+                    )
 
                 links[chat_id] = invite_link
                 return invite_link
 
             if not await is_active_chat(chat_id):
                 userbot = await get_assistant(chat_id)
-                
+
                 try:
                     member = await app.get_chat_member(chat_id, userbot.id)
-                    if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.RESTRICTED]:
+                    if member.status in [
+                        ChatMemberStatus.BANNED,
+                        ChatMemberStatus.RESTRICTED,
+                    ]:
                         return await safe_reply(
                             message,
-                            _["call_2"].format(app.mention, userbot.id, userbot.name, userbot.username)
+                            _["call_2"].format(
+                                app.mention, userbot.id, userbot.name, userbot.username
+                            ),
                         )
                 except ChatAdminRequired:
                     return await safe_reply(
                         message,
-                        "🛑 Storm Music must have admin rights to check assistant's membership status."
+                        "🛑 Storm Music must have admin rights to check assistant's membership status.",
                     )
                 except UserNotParticipant:
                     invite_link = await get_invite_link(False)
@@ -208,7 +228,7 @@ def PlayWrapper(command):
                             for sudo_id in SUDOERS:
                                 try:
                                     await app.send_message(sudo_id, note)
-                                except:
+                                except Exception:
                                     pass
                             return await safe_reply(
                                 message,
@@ -217,7 +237,7 @@ def PlayWrapper(command):
                         except YouBlockedUser:
                             return await safe_reply(
                                 message,
-                                _["call_3"].format(app.mention, "Blocked")
+                                _["call_3"].format(app.mention, "Blocked"),
                             )
                         except (InviteHashExpired, ChannelInvalid):
                             links.pop(chat_id, None)
@@ -228,7 +248,7 @@ def PlayWrapper(command):
                                 continue
                             return await safe_reply(
                                 message,
-                                _["call_3"].format(app.mention, "InviteErr")
+                                _["call_3"].format(app.mention, "InviteErr"),
                             )
                         except ChatAdminRequired:
                             return await safe_reply(message, _["call_1"])
@@ -243,12 +263,12 @@ def PlayWrapper(command):
                                     continue
                                 return await safe_reply(
                                     message,
-                                    _["call_3"].format(app.mention, "InviteErr")
+                                    _["call_3"].format(app.mention, "InviteErr"),
                                 )
                             if "YOU_BLOCKED_USER" in s:
                                 return await safe_reply(
                                     message,
-                                    _["call_3"].format(app.mention, "Blocked")
+                                    _["call_3"].format(app.mention, "Blocked"),
                                 )
                             return await safe_reply(
                                 message,
@@ -263,7 +283,7 @@ def PlayWrapper(command):
                     if joined:
                         try:
                             await msg.edit(_["call_5"].format(app.mention))
-                        except:
+                        except Exception:
                             pass
 
             return await command(
