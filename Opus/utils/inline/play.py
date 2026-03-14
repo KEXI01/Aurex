@@ -65,7 +65,7 @@ def stream_markup_timer(_, chat_id, played, dur):
     filled = "━" * pos
     empty = "─" * (total - pos)
 
-    bar = f"[{filled}●{empty}]"
+    bar = f"|{filled}●{empty}|"
 
     buttons = [
         [
