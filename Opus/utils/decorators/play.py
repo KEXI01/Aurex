@@ -282,9 +282,12 @@ def PlayWrapper(command):
 
                     if joined:
                         try:
-                            await msg.edit(_["call_5"].format(app.mention))
+                            await msg.edit_text(_["call_5"].format(app.mention))
                         except Exception:
-                            pass
+                            try:
+                                await safe_reply(message, _["call_5"].format(app.mention))
+                            except Exception:
+                                pass
 
             return await command(
                 client,
@@ -301,5 +304,4 @@ def PlayWrapper(command):
         except Exception as ex:
             error_message = f"🚫 <b>Unexpected Error:</b>\n<pre>{str(ex)}</pre>"
             await safe_reply(message, error_message, disable_web_page_preview=True)
-
     return wrapper
