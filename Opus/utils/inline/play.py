@@ -48,7 +48,6 @@ def telegram_markup(_, chat_id):
     ]
     return buttons
 
-
 def stream_markup_timer(_, chat_id, played, dur):
     played_sec = time_to_seconds(played)
     duration_sec = time_to_seconds(dur) or 0
@@ -60,28 +59,14 @@ def stream_markup_timer(_, chat_id, played, dur):
 
     umm = max(0, min(100, math.floor(percentage)))
 
-    if 0 < umm <= 10:
-        bar = "[■□□□□□□□□□]"
-    elif 10 < umm < 20:
-        bar = "[■■□□□□□□□□]"
-    elif 20 <= umm < 30:
-        bar = "[■■■□□□□□□□]"
-    elif 30 <= umm < 40:
-        bar = "[■■■■□□□□□□]"
-    elif 40 <= umm < 50:
-        bar = "[■■■■■□□□□□]"
-    elif 50 <= umm < 60:
-        bar = "[■■■■■■□□□□]"
-    elif 60 <= umm < 70:
-        bar = "[■■■■■■■□□□]"
-    elif 70 <= umm < 80:
-        bar = "[■■■■■■■■□□]"
-    elif 80 <= umm < 95:
-        bar = "[■■■■■■■■■□]"
-    else:
-        bar = "[■■■■■■■■■■]"
+    total = 10
+    pos = round((umm / 100) * total)
 
-    username = app.username.replace("@", "")
+    filled = "━" * pos
+    empty = "─" * (total - pos)
+
+    bar = f"[{filled}●{empty}]"
+
     buttons = [
         [
             InlineKeyboardButton(
@@ -95,11 +80,12 @@ def stream_markup_timer(_, chat_id, played, dur):
             InlineKeyboardButton(text="‣‣I", callback_data=f"ADMIN Skip|{chat_id}"),
         ],
         #[
-         #   InlineKeyboardButton(text=_["CLOSE_BUTTON"], callback_data="close"),
-          #  InlineKeyboardButton(text="ᴇɴᴅ 🍁", callback_data=f"ADMIN Stop|{chat_id}"),
+        #   InlineKeyboardButton(text=_["CLOSE_BUTTON"], callback_data="close"),
+        #   InlineKeyboardButton(text="ᴇɴᴅ 🍁", callback_data=f"ADMIN Stop|{chat_id}"),
         #],
     ]
     return buttons
+
 
 
 def stream_markup(_, chat_id):
