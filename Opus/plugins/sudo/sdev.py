@@ -29,7 +29,6 @@ PROTECTED_PATTERNS = [
     "cookie_refresh_time.txt",
 ]
 BLOCKED_EXECUTABLES = {
-    "rm",
     "mv",
     "cp",
     "chmod",
@@ -37,7 +36,6 @@ BLOCKED_EXECUTABLES = {
     "sudo",
     "su",
     "bash",
-    "sh",
     "zsh",
     "fish",
     "python",
