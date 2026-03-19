@@ -13,10 +13,17 @@ from Opus.logging import LOGGER
 def install_req(cmd: str) -> Tuple[str, str, int, int]:
     async def install_requirements():
         args = shlex.split(cmd)
+        env = os.environ.copy()
+        env.pop("VIRTUAL_ENV", None)
+        env.pop("PYTHONHOME", None)
+        env.pop("PYTHONPATH", None)
+        env["PYTHONNOUSERSITE"] = "1"
+
         process = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await process.communicate()
         return (
@@ -27,7 +34,6 @@ def install_req(cmd: str) -> Tuple[str, str, int, int]:
         )
 
     return asyncio.get_event_loop().run_until_complete(install_requirements())
-
 
 def git():
     REPO_LINK = config.UPSTREAM_REPO
