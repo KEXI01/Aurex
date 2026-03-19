@@ -40,6 +40,7 @@ BLOCKED_EXECUTABLES = {
     "fish",
     "python",
     "git",
+    "sh",
     "find",
     "locate",
     "wget",
